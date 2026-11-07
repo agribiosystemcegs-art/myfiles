@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ph.edu.carsu.dabe.myfiles",
+      "sha256_cert_fingerprints": ["PASTE:THE:SHA-256:FINGERPRINT:THAT:BUBBLEWRAP:PRINTS:HERE"]
+    }
+  }
+]
