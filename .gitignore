@@ -1,6 +1,29 @@
-android/*.keystore
+.DS_Store
+
+# Android app (Bubblewrap): never commit signing keys, passwords or build outputs.
+# The upload key lives outside this folder, in DABE-MyFiles-Android-Signing/.
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+passwords.txt
+signing.properties
+keystore.properties
+*.apk
+*.aab
+*.idsig
 android/app/
 android/build/
-android/*.apk
-android/*.aab
-.DS_Store
+android/gradle/
+android/.gradle/
+android/gradlew
+android/gradlew.bat
+android/build.gradle
+android/settings.gradle
+android/gradle.properties
+android/local.properties
+android/manifest-checksum.txt
+android/store_icon.png
+android/node_modules/

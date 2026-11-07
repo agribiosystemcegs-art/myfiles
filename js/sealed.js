@@ -7,7 +7,9 @@
  *   usedMs, leaveCount: the page's own numbers (sealedSave / sealedFinish meta: its timer by monotonicMs and its leave count) go
  *               into the sealed text. The app also keeps its own: the time open by the monotonic clock (performance.now, so a changed
  *               phone clock does not change it; time while the app was closed counts by the wall clock, never negative) and the
- *               times the app was hidden; these are used only when the page sends none.
+ *               times the app was hidden. The time: the page's when it sends one, else the app's. The leave count: the higher of
+ *               the two. Both are the phone's own numbers: only MyFiles can hold them to account (Practice.gs keeps serverMs, the
+ *               time from the start to the moment the answers arrived, and flags a late arrival).
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -50,7 +52,8 @@
       if (isFinite(m.leaveCount) && m.leaveCount !== null) rec.pageLeaves = Math.max(rec.pageLeaves || 0, Math.floor(Number(m.leaveCount)));
     },
     used: function (rec) { return isFinite(rec.pageUsedMs) ? rec.pageUsedMs : (rec.usedMs || 0); },
-    leaves: function (rec) { return isFinite(rec.pageLeaves) ? rec.pageLeaves : (rec.leaveCount || 0); },
+    // the leave count: the page's or the app's own, whichever is higher (a page that was changed cannot lower what the app saw)
+    leaves: function (rec) { return Math.max(isFinite(rec.pageLeaves) ? rec.pageLeaves : 0, rec.leaveCount || 0); },
     key: function (attId) { var k = String(attId == null ? '' : attId).trim(); if (!k || k.length > 200) throw new Error('This test has no try number.'); return k; },
     // payload: the answer of studentPracticeStart (questions, seal, limitMs, dueMs, submitBy …). Starting again resumes (answers kept).
     start: function (attId, payload, account) {

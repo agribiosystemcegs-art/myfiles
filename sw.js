@@ -5,43 +5,24 @@
  *   App files: cache-first (precached at install), cache 'myfiles-app-<VERSION>'.
  *   The portal's libraries (pdf.js, MathJax, mammoth, SheetJS, qrcode-generator): cache-first by their versioned addresses, in
  *     'myfiles-libs-1' (kept across app versions: the addresses carry the library version). A file is kept only when its SHA-256
- *     matches the pin below (the same pins as MyFiles Desktop's libs.json).
+ *     matches its pin in js/libs.js (the same pins as MyFiles Desktop's libs.json).
  *   Google Fonts: the network first, the kept copy offline ('myfiles-fonts-1').
- *   Never touched: MyFiles itself (POST requests), Google sign-in, every other site.
+ *   Never touched: MyFiles itself (POST requests, never kept here: the answers are personal), Google sign-in, every other site.
+ *   The page itself runs in a sandboxed frame this worker does not control: the app hands it the libraries (js/libs.js getLib).
  */
-var VERSION = '1.0.1';
-var CACHE = 'myfiles-app-' + VERSION, LIBS = 'myfiles-libs-1', FONTS = 'myfiles-fonts-1';
+importScripts('js/libs.js');
+var VERSION = '1.0.2';
+var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
 var SHELL = [
   './', 'index.html', 'style.css', 'config.js', 'manifest.webmanifest',
-  'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/app.js',
+  'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/app.js',
   'vendor/jsQR.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png', 'icons/student-mark-white.svg', 'icons/faculty-mark-white.svg'
 ];
-// The libraries the pages load (PortalScript.html, StudentScript.html), by address -> SHA-256 (hex)
-var PINS = {
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js': '5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946',
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js': '5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js': 'feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b',
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js': 'feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b',
-  'https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js': 'd4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882',
-  'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js': 'c89e2c0e9d94a9716fd74340ccc0210a3ce41dc5ae5ff4e011e12afcec9cd560',
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js': '596ef52239e52d8ee3cee10b2ee4a72596abf900d0e4f468593f956e9f1809b0',
-  'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js': '596ef52239e52d8ee3cee10b2ee4a72596abf900d0e4f468593f956e9f1809b0',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js': 'c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99',
-  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js': 'c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99',
-  'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js': '164fc2c1c9eaf0a03aa8dfdb855e82e41a5c6922fbad8bb3238116207e26bef7',
-  'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js': '18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780'
-};
-// fetched ahead after sign-in (one address of each library; the other is the page's fallback)
-var WARM = {
-  faculty: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'],
-  student: ['https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js']
-};
-
+// The libraries the pages load, by address -> SHA-256 (hex), and the ones fetched ahead: js/libs.js (shared with the app)
+var PINS = self.MFA_LIBS.PINS, WARM = self.MFA_LIBS.WARM;
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
     return c.addAll(SHELL.map(function (u) { return new Request(u, { cache: 'reload' }); }));
@@ -60,7 +41,7 @@ function fetchLib(url) {
   return fetch(new Request(url, { mode: 'cors', credentials: 'omit' })).then(function (res) {
     if (!res || !res.ok) return res;
     return res.clone().arrayBuffer().then(function (b) { return crypto.subtle.digest('SHA-256', b); }).then(function (d) {
-      if (hex(d) !== PINS[url]) return res;                    // not the pinned file: shown this once, never kept
+      if (hex(d) !== PINS[url]) return Response.error();       // not the pinned file: never run, never kept
       return caches.open(LIBS).then(function (c) { return c.put(url, res.clone()); }).then(function () { return res; });
     });
   });

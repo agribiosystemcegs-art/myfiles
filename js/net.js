@@ -21,6 +21,8 @@
   var LockError = mk('LockError', 'locked');   // the net lock is on (a sealed test)
 
   var LOCK_MSG = 'The test is open: the app makes no connection until you submit.';
+  // where a sign-in may go: MyFiles's https /exec address, or (development) the local simulator
+  var SAFE_API = /^(https:\/\/script\.google\.com\/(a\/macros\/[^/?#]+|macros)\/s\/[\w-]+\/exec|http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?\/[^?#]*)$/;
 
   // o: { fetch, getApi() -> url, getCred() -> Promise<cred|null>, devAs() -> email|'' , locked() -> bool, timeoutMs }
   function createRequester(o) {
@@ -31,6 +33,7 @@
       if (o.locked && o.locked()) return Promise.reject(LockError(LOCK_MSG));
       var base = String((o.getApi && o.getApi()) || '').trim();
       if (!base) return Promise.reject(AuthError('This copy of MyFiles has no MyFiles address yet (config.js).'));
+      if (!SAFE_API.test(base)) return Promise.reject(AuthError('This MyFiles address is not one the app uses (config.js).'));   // https only (http: the local simulator)
       var dev = o.devAs ? String(o.devAs() || '') : '';
       var url = dev ? base + (base.indexOf('?') < 0 ? '?' : '&') + 'as=' + encodeURIComponent(dev) : base;
       var credP = opt.anonymous ? Promise.resolve(null) : Promise.resolve(o.getCred ? o.getCred() : null);
@@ -103,10 +106,12 @@
         var b = { action: 'appPatch' }; Object.keys(p).forEach(function (k) { b[k] = p[k]; });
         return post(b, Object.assign({ timeout: 120000 }, opt || {})).then(function (j) { return { json: j || {}, at: at(j) }; });
       },
-      pair: function (code, label) { return post({ action: 'scanPair', code: code, label: label }, { anonymous: true, timeout: 30000 }); }
+      pair: function (code, label) { return post({ action: 'scanPair', code: code, label: label }, { anonymous: true, timeout: 30000 }); },
+      // a linked phone signing out: MyFiles ends its token (an older MyFiles answers "Unknown request", which is fine)
+      signOut: function () { return post({ action: 'appSignOut' }, { timeout: 15000 }); }
     };
   }
 
-  return { createRequester: createRequester, NetError: NetError, AuthError: AuthError, ServerError: ServerError, BusyError: BusyError,
+  return { createRequester: createRequester, SAFE_API: SAFE_API, NetError: NetError, AuthError: AuthError, ServerError: ServerError, BusyError: BusyError,
     LockError: LockError, LOCK_MSG: LOCK_MSG };
 });

@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "ph.edu.carsu.dabe.myfiles",
-      "sha256_cert_fingerprints": ["PASTE:THE:SHA-256:FINGERPRINT:THAT:BUBBLEWRAP:PRINTS:HERE"]
+      "sha256_cert_fingerprints": ["56:DA:93:BB:FF:86:7F:38:C0:B8:26:96:F2:28:F2:74:2E:F1:59:AC:01:C2:81:45:54:BA:63:93:8B:B4:81:86"]
     }
   }
 ]

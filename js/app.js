@@ -1,11 +1,12 @@
 /*
  * MyFiles app: the app around the page. Sign-in (Google ID token, or a link code), the page of the role kept on the phone and
- * shown in a same-origin frame with the bridge (shim.js), the status bar, the first-run warm-up, the scan button (students),
+ * shown in a sandboxed frame (an origin of its own: it never reaches the app's storage or window) with the bridge (shim.js:
+ * a MessagePort, a fixed list of checked requests), the status bar, the first-run warm-up, the scan button (students),
  * the menu, sealed tests' storage and the net lock. Storage: store.js; the rules: engine.js.
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.0.1';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.0.2';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -14,7 +15,7 @@
 
   var store, req, engine, sealed, scanner;
   var cred = null, who = null, meta = {}, pageParams = {}, role = '', lockOn = false, activeSealed = '';
-  var frameHandlers = [], updated = null, gisReady = null, hello = null, shellStamp = '';
+  var updated = null, gisReady = null, hello = null, shellStamp = '', page = null, pageLs = {}, pageSs = {}, lsTimer = null;
 
   /* ---------- small helpers ---------- */
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -46,13 +47,18 @@
   /* ---------- settings: config.js, dev mode (localhost only), the pinned MyFiles address ---------- */
   function devApi() { if (!LOCALHOST) return ''; return lsGet('mfa.devApi') || (typeof DEV_API === 'string' ? DEV_API.trim() : ''); }
   function devAs() { if (!devApi()) return ''; return (lsGet('mfa.devAs') || (typeof DEV_AS === 'string' ? DEV_AS : '')).trim().toLowerCase(); }
-  function configApi() { return typeof MYFILES_API === 'string' ? MYFILES_API.trim() : ''; }
-  function api() { return devApi() || configApi() || lsGet('mfa.pin') || ''; }
+  // Only an https script.google.com /exec address is ever used (config.js, or the address pinned by the first link QR).
+  function configApi() { var a = typeof MYFILES_API === 'string' ? MYFILES_API.trim() : ''; return API_RE.test(a) ? a : ''; }
+  function pinnedApi() { var a = lsGet('mfa.pin') || ''; return API_RE.test(a) ? a : ''; }
+  function api() { return devApi() || configApi() || pinnedApi() || ''; }
   function domain() { return (typeof DOMAIN === 'string' && DOMAIN.trim()) || 'carsu.edu.ph'; }
-  function clientId() { return (typeof GOOGLE_WEB_CLIENT_ID === 'string' && GOOGLE_WEB_CLIENT_ID.trim()) || lsGet('mfa.clientId') || ''; }
+  // Google sign-in sends the person's ID token to MyFiles, so it is offered only when the MyFiles address is fixed in config.js:
+  // an address learned from a scanned QR code could be someone else's web app, which could then use the token as that person.
+  function googleOk() { return !!(configApi() && !devApi()); }
+  function clientId() { if (!googleOk()) return ''; return (typeof GOOGLE_WEB_CLIENT_ID === 'string' && GOOGLE_WEB_CLIENT_ID.trim()) || lsGet('mfa.clientId') || ''; }
   // Which MyFiles a link code may use: the configured or pinned one only; the first link QR's address is pinned (MyFiles Scan's rule).
   function linkTarget(linkApi) {
-    var fixed = devApi() || configApi() || lsGet('mfa.pin') || '';
+    var fixed = devApi() || configApi() || pinnedApi() || '';
     linkApi = String(linkApi || '').trim();
     if (fixed) { if (linkApi && linkApi !== fixed && !devApi()) return { ok: false, message: 'This link code is for a different MyFiles.' }; return { ok: true, api: fixed }; }
     if (!linkApi) return { ok: false, message: 'This app has no MyFiles address yet. Scan the link code instead of typing it.' };
@@ -68,7 +74,7 @@
     q.forEach(function (v, k) { if (k !== 'devapi' && k !== 'as' && k !== 'source') keep[k] = v; });
     pageParams = keep;
     var m = /(?:^#|&)link=([A-Za-z0-9]{8})/.exec(location.hash || '');
-    if (m) { lsSet('mfa.pendingLink', m[1].toUpperCase()); }
+    if (m) { lsSet('mfa.pendingLink', JSON.stringify({ code: m[1].toUpperCase(), at: Date.now() })); }
     if (location.search || location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   })();
 
@@ -120,6 +126,7 @@
     $('linkForm').hidden = true; $('btnLink').hidden = false;
     var dev = devAs();
     $('btnDev').hidden = !devApi();
+    $('codeIn').value = '';
     $('btnDev').textContent = dev ? 'Continue as ' + dev + ' (dev)' : 'Dev mode: add ?as=<email> to the address';
     $('domainLbl').textContent = domain();
     var paint = function () {
@@ -132,11 +139,19 @@
       }).catch(function () { $('gWrap').hidden = true; });
     };
     paint();
-    if (!devApi() && api() && online()) req.hello().then(function (h) {
+    if (googleOk() && online()) req.hello().then(function (h) {
       if (h && h.clientId && h.clientId !== lsGet('mfa.clientId')) { lsSet('mfa.clientId', h.clientId); if (!(typeof GOOGLE_WEB_CLIENT_ID === 'string' && GOOGLE_WEB_CLIENT_ID.trim())) { gisReady = null; paint(); } }
     }).catch(function () {});
-    var pend = lsGet('mfa.pendingLink');
-    if (pend) { lsSet('mfa.pendingLink', null); linkWith('', pend); }
+    // a link code from an address (#link=): filled in, never used by itself (someone else's code would link this phone to their account)
+    var pend = pendingLink(); lsSet('mfa.pendingLink', null);
+    if (pend) {
+      $('linkForm').hidden = false; $('btnLink').hidden = true; $('codeIn').value = pend;
+      signMsg('A link code came with the address. Tap “Link this phone” only if you made this code yourself in MyFiles just now.');
+    }
+  }
+  function pendingLink() {
+    var p = null; try { p = JSON.parse(lsGet('mfa.pendingLink') || 'null'); } catch (e) { p = null; }
+    return p && typeof p.code === 'string' && /^[A-Z0-9]{8}$/.test(p.code) && Date.now() - (Number(p.at) || 0) < 10 * 60000 ? p.code : '';
   }
   function linkWith(linkApi, code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -145,7 +160,6 @@
     if (!/^[A-Z2-9]{8}$/.test(code)) { signMsg('The link code has 8 letters and numbers.', 'bad'); return Promise.resolve(false); }
     if (!online()) { signMsg("You're offline. Linking needs the internet once.", 'bad'); return Promise.resolve(false); }
     signMsg('Linking…');
-    if (tg.pin) lsSet('mfa.pinTry', tg.api);
     var useApi = tg.api;
     var pairReq = MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return useApi; }, devAs: devAs });
     return pairReq.pair(code, deviceLabel()).then(function (res) {
@@ -172,7 +186,9 @@
     return req.who().then(function (w) {
       var nw = { email: String(w.email || '').toLowerCase(), name: w.name || w.email, role: w.role === 'student' ? 'student' : 'faculty', via: cred && cred.type };
       if (!nw.email) throw new Error('MyFiles did not say who is signed in.');
-      return kvPut('who', nw).then(function () { who = nw; return enterApp(); });
+      return kvGet('who').then(function (old) {
+        if (old && old.email && old.email !== nw.email) return forget(old.email);   // another account was here: its copy goes
+      }).then(function () { return kvPut('who', nw); }).then(function () { who = nw; return enterApp(); });
     }).catch(function (e) {
       if (e && e.auth) signMsg('MyFiles did not accept this sign-in. ' + (cred && cred.type === 'device' ? 'Make a new link code and try again.' : 'Use your CarSU account, or link with a code.'), 'bad');
       else if (e && e.net) signMsg("You're offline. Signing in needs the internet once.", 'bad');
@@ -186,6 +202,8 @@
     role = who.role;
     return kvGet('meta:' + who.email).then(function (m) {
       meta = m || {};
+      return loadPageStore();
+    }).then(function () {
       return engine.setAccount(who, meta);
     }).then(function () {
       paintChrome();
@@ -230,12 +248,23 @@
     $('noShellText').textContent = auth ? 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '.' : e && !e.net && e.message ? e.message : 'MyFiles needs the internet the first time it opens. After that it works offline too.';
   }
   function fetchShell() {
+    var forRole = role;
     return req.shell(shellStamp).then(function (r) {
       engine.markOnline();
       if (r.same) return null;
-      var sh = { html: r.html, stamp: r.stamp, at: Date.now(), role: r.role || role };
-      return kvPut('shell:' + (r.role || role), sh).then(function () { return sh; });
+      return shellOk(r, forRole).then(function (ok) {
+        if (!ok) throw new Error('MyFiles sent a page that did not arrive whole. Try again.');
+        var sh = { html: r.html, stamp: r.stamp, at: Date.now(), role: forRole };
+        return kvPut('shell:' + forRole, sh).then(function () { return sh; });
+      });
     });
+  }
+  // the page MyFiles sent: html, of the signed-in role, and its stamp is its SHA-256 (DesktopApi.gs appShell_)
+  function shellOk(r, forRole) {
+    if (!r || typeof r.html !== 'string' || !r.html || typeof r.stamp !== 'string' || !/^[0-9a-f]{64}$/.test(r.stamp)) return Promise.resolve(false);
+    if (r.role && r.role !== forRole) return Promise.resolve(false);
+    if (!(window.crypto && crypto.subtle)) return Promise.resolve(false);
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(r.html)).then(function (d) { return MFA_LIBS.hex(d) === r.stamp; }, function () { return false; });
   }
   var shellBusy = null;
   function updateShell() {
@@ -253,7 +282,8 @@
     $('mScans').hidden = !stu; $('mLoc').hidden = !stu;
   }
 
-  // the page in its frame: the bridge first, the student's state where the web page would put it
+  // the page in its sandboxed frame: the bridge first, the student's state where the web page would put it
+  function nonce() { var b = new Uint8Array(16); crypto.getRandomValues(b); return MFA_LIBS.hex(b.buffer); }
   function showApp(html, params) {
     showOnly('scrApp');
     if (params) pageParams = params;
@@ -261,35 +291,90 @@
     var stateP = stu ? engine.call('appStudentState', deep ? [pageParams] : [], { callId: 'boot' }).then(function (r) { return r && r.ok ? r.value : null; }) : Promise.resolve(undefined);
     return stateP.then(function (state) {
       T.shellStart = Math.round(performance.now());
-      frameHandlers = [];
-      var f = $('page');
+      if (page) page.close();
+      var f = $('page'), n = nonce();
+      page = MFA_SHIM.host({ frame: function () { return f.contentWindow; }, nonce: n, handle: fromFrame });
+      var boot = { nonce: n, origin: location.origin, version: APP_VERSION, params: pageParams, role: role, device: DEV_NOUN, api: api(),
+        appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS) };
       f.onload = function () { T.shellLoaded = Math.round(performance.now()); };
-      f.srcdoc = MFA_SHIM.prepareHtml(html, stu ? { state: state } : {});
+      f.srcdoc = MFA_SHIM.prepareHtml(html, stu ? { state: state, boot: boot } : { boot: boot });
       lastHtml = html;
       setUpdated(null);
       paintStatus(engine.state());
     });
   }
   var lastHtml = '';
-  window.MFA_INSTALL = function (win) {
-    MFA_SHIM.install(win, bridge);
-    try { win.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheets(); }); } catch (e) {}
-  };
+  window.addEventListener('message', function (e) { if (page && page.onMessage(e)) page.send('state', engine.state()); });
+  // What the page may ask (shim.js check() has already looked at each request's shape)
+  var SEALED = { sealedStart: 1, sealedSave: 1, sealedFinish: 1, sealedGet: 1, sealedList: 1, sealedLeave: 1, sealedClear: 1 };
+  function fromFrame(t, m) {
+    switch (t) {
+      case 'call': return bridge.call(m.fn, m.args, m.id);
+      case 'app':
+        if (m.name === 'syncNow') return syncNow();
+        if (SEALED[m.name]) return bridge.app[m.name].apply(null, m.args);
+        throw new Error('This request is not allowed.');
+      case 'declined': setUpdated({ fn: m.fn, args: m.args }); return null;
+      case 'netLock': setLock(m.on); return lockOn;
+      case 'inApp': showApp(lastHtml, MFA_SHIM.cleanParams(m.params)); return null;
+      case 'viewFile': viewFile(m.blob, m.name); return null;
+      case 'signOut': signOut({ fromPage: true, again: !!m.again }); return null;
+      case 'ls': case 'ss': pageStore(t, m.k, m.v); return null;
+      case 'geo': return geo(m.opts || {});
+      case 'clip': return navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(m.text).then(function () { return true; }, function () { return false; }) : false;
+      case 'lib': return MFA_LIBS.getLib(m.url, { caches: window.caches, fetch: window.fetch.bind(window), subtle: crypto.subtle });
+      case 'escape': closeSheets(); return null;
+    }
+    throw new Error('This request is not allowed.');
+  }
+  // the faculty portal's "use my location" (the campus areas for class codes): one position, only for the faculty page
+  function geo(o) {
+    if (role !== 'faculty' || !navigator.geolocation) return Promise.resolve({ error: { code: 1, message: 'Location is not used here.' } });
+    return new Promise(function (resolve) {
+      navigator.geolocation.getCurrentPosition(function (p) {
+        var c = p && p.coords; resolve(c ? { coords: { latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy }, timestamp: p.timestamp } : { error: { code: 2, message: 'No position.' } });
+      }, function (e) { resolve({ error: { code: (e && e.code) || 2, message: (e && e.message) || 'No position.' } }); },
+      { enableHighAccuracy: !!o.enableHighAccuracy, timeout: Math.min(60000, Number(o.timeout) || 10000), maximumAge: Math.max(0, Number(o.maximumAge) || 0) });
+    });
+  }
+  // The page's localStorage (kept per account in the app's storage) and sessionStorage (until the app closes)
+  var PAGE_LS_MAX = 8 * 1048576;
+  function pageStore(t, k, v) {
+    var o = t === 'ls' ? pageLs : pageSs;
+    if (v === null) delete o[k]; else o[k] = v;
+    if (t !== 'ls' || !who) return;
+    var em = who.email;
+    clearTimeout(lsTimer);
+    lsTimer = setTimeout(function () {
+      var size = 0; Object.keys(pageLs).forEach(function (x) { size += x.length + pageLs[x].length; });
+      if (size <= PAGE_LS_MAX && who && who.email === em) kvPut('pagels:' + em, pageLs);
+    }, 400);
+  }
+  function loadPageStore() {
+    pageSs = {};
+    var em = who.email;
+    return kvGet('pagels:' + em).then(function (o) {
+      if (o && typeof o === 'object') { pageLs = o; return; }
+      // the first open of this version: the page's keys from the app's own localStorage (the page shared it before) move over
+      pageLs = {};
+      try {
+        var keys = []; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('dabe-') === 0) keys.push(k); }
+        keys.forEach(function (k) { pageLs[k] = localStorage.getItem(k); localStorage.removeItem(k); });
+      } catch (e) { /* storage blocked */ }
+      return kvPut('pagels:' + em, pageLs);
+    });
+  }
+  // everything kept for one account, except what has not reached MyFiles yet (changes, scans, sealed answers)
+  function forget(email) {
+    return Promise.all([new MFA_ENGINE.ReadCache(store, email).clear(), kvDel('meta:' + email), kvDel('pagels:' + email)]).catch(function () {});
+  }
   var bridge = {
     call: function (fn, args, id) {
       var p = engine.call(fn, args, { callId: id });
-      if (LOCALHOST) { var t0 = performance.now(), rec = { fn: fn, args: JSON.stringify(args).slice(0, 80), at: Math.round(t0) }; (window.__mfaCalls = window.__mfaCalls || []).push(rec);
-        p.then(function (r) { rec.ms = Math.round(performance.now() - t0); rec.ok = r.ok; rec.cached = !!r.cached; rec.msg = r.message || ''; }); }
+      if (LOCALHOST) { var t0 = performance.now(), rec = { fn: fn, at: Math.round(t0) }; (window.__mfaCalls = window.__mfaCalls || []).push(rec);
+        p.then(function (r) { rec.ms = Math.round(performance.now() - t0); rec.ok = r.ok; rec.cached = !!r.cached; }); }
       return p;
     },
-    declined: function (fn, args) { setUpdated({ fn: fn, args: args }); },
-    onEvent: function (cb) { frameHandlers.push(cb); },
-    open: function (u) { var w = window.open(u, '_blank', 'noopener'); if (!w) location.href = u; },
-    inApp: function (p) { showApp(lastHtml, p); },
-    viewFile: function (u, name) { viewFile(u, name); },
-    signOut: function (again) { signOut({ fromPage: true, again: again }); },
-    appHref: function () { return location.href; },
-    boot: function () { return { version: APP_VERSION, params: pageParams, role: role, device: DEV_NOUN, api: api() }; },
     app: {
       sealedStart: function (attId, payload) { activeSealed = String(attId); return sealed.start(attId, payload, who && who.email); },
       sealedSave: function (attId, answers, m) { return sealed.save(attId, answers, m); },
@@ -297,14 +382,10 @@
       sealedGet: function (attId) { return sealed.get(attId); },
       sealedList: function () { return sealed.list(who && who.email); },
       sealedLeave: function (attId) { return sealed.leave(attId); },
-      sealedClear: function (attId) { return sealed.clear(attId); },
-      netLock: function (on) { setLock(on); return lockOn; },
-      monotonicMs: function () { return performance.now(); },
-      state: function () { return engine.state(); },
-      syncNow: function () { return syncNow(); }
+      sealedClear: function (attId) { return sealed.clear(attId); }
     }
   };
-  function toFrame(type, d) { frameHandlers.slice().forEach(function (cb) { try { cb(type, d); } catch (e) {} }); }
+  function toFrame(type, d) { if (page) page.send(type, d); }
 
   /* ---------- the net lock (a sealed test is open) ---------- */
   function setLock(on) {
@@ -339,6 +420,7 @@
     $('statIcon').setAttribute('href', '#' + icon);
     $('statText').textContent = text;
     $('stat').className = 'stat' + (cls ? ' ' + cls : '');
+    toFrame('state', s);
     if (!$('menu').hidden) paintMenu();
   }
   function setUpdated(u) { updated = u; $('upd').hidden = !u || lockOn; }
@@ -394,11 +476,19 @@
   }
 
   /* ---------- a file the page made ---------- */
-  function viewFile(u, name) {
-    $('vFrame').src = u; $('vSave').href = u; $('vSave').setAttribute('download', name && name.length < 120 ? name : 'MyFiles file');
-    $('vName').textContent = name || 'File'; $('viewer').hidden = false;
+  // Shown here only when it cannot run script at the app's address (PDF, pictures, text); anything else (html, svg …) is saved.
+  var VIEW_OK = /^(application\/pdf|image\/(png|jpeg|gif|webp|bmp)|text\/(plain|csv))$/, viewUrl = '';
+  function fileName(name) { var n = String(name || '').replace(/[\u0000-\u001f\/\\:*?"<>|]+/g, ' ').trim().slice(0, 120); return n || 'MyFiles file'; }
+  function viewFile(blob, name) {
+    if (!(blob instanceof Blob)) return;
+    if (viewUrl) URL.revokeObjectURL(viewUrl);
+    var type = String(blob.type || '').split(';')[0].trim().toLowerCase(), show = VIEW_OK.test(type);
+    viewUrl = URL.createObjectURL(show ? blob : new Blob([blob], { type: 'application/octet-stream' }));
+    $('vFrame').src = show ? viewUrl : 'about:blank'; $('vSave').href = viewUrl; $('vSave').setAttribute('download', fileName(name));
+    $('vName').textContent = fileName(name); $('viewer').hidden = false;
+    if (!show) toast('Tap Save to open this file.');
   }
-  $('vClose').addEventListener('click', function () { $('viewer').hidden = true; $('vFrame').src = 'about:blank'; });
+  $('vClose').addEventListener('click', function () { $('viewer').hidden = true; $('vFrame').src = 'about:blank'; if (viewUrl) { URL.revokeObjectURL(viewUrl); viewUrl = ''; } });
 
   /* ---------- sign-out and removing everything ---------- */
   function signOut(o) {
@@ -409,12 +499,15 @@
       if (!confirm(what.charAt(0).toUpperCase() + what.slice(1) + ' reached MyFiles yet. Sign out anyway? They stay on this ' + DEV_NOUN + ' and are sent the next time you sign in here.')) return;
     } else if (!confirm('Sign out of MyFiles? Your copy of MyFiles on this ' + DEV_NOUN + ' is removed.')) return;
     engine.stop();
-    var em = who && who.email;
-    Promise.resolve(engine.cache ? engine.cache.clear() : null).then(function () {
-      return Promise.all([kvDel('who'), kvDel('meta:' + em), saveCred(null)]);
+    var em = who && who.email, wasDevice = cred && cred.type === 'device';
+    // a linked phone's token is also ended at MyFiles (best effort; DesktopApi.gs appSignOut): a copy of it no longer works
+    var revoke = wasDevice && online() && !lockOn ? req.signOut().catch(function () {}) : Promise.resolve();
+    revoke.then(function () { return engine.cache ? engine.cache.clear() : null; }).then(function () {
+      return Promise.all([kvDel('who'), saveCred(null), em ? forget(em) : null]);
     }).then(function () {
       try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
-      who = null; role = ''; engine.setAccount(null);
+      who = null; role = ''; engine.setAccount(null); pageLs = {}; pageSs = {}; clearTimeout(lsTimer);
+      if (page) { page.close(); page = null; }
       $('page').srcdoc = ''; closeSheets();
       showSign(o.again ? 'Choose the account to sign in with.' : 'Signed out.');
     });
@@ -510,27 +603,22 @@
     engine.on('hello', function (h) {
       hello = h;
       if (typeof h.loc === 'boolean') scanner.setLocServer(h.loc);
-      if (h.clientId) lsSet('mfa.clientId', h.clientId);
+      if (h.clientId && googleOk()) lsSet('mfa.clientId', h.clientId);
     });
     engine.on('online', function () { scanner.sync(); });
     engine.on('sealedSent', function (d) { if (d && d.value && (d.value.ok || d.value.done)) sealed.clear(d.attId).catch(function () {}); });
-    engine.on('updated', function onUpd(d, tries) {
+    engine.on('updated', function (d) {
       if (lockOn) return;
-      if (d.fn === 'appStudentState' || d.fn === 'studentGetHome') {   // a newer first state: drawn again when the student is on My Classes, not typing
-        try {
-          var w = $('page').contentWindow, a = w && w.document.activeElement;
-          if (w && !w.HOME && w.document.readyState !== 'complete' && (tries || 0) < 20) { setTimeout(function () { onUpd(d, (tries || 0) + 1); }, 250); return; }
-          var typing = a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable);
-          if (w && w.HOME && w.S === w.HOME && !typing && typeof w.render === 'function' && d.value && d.value.home) {
-            w.S = w.JSON.parse(JSON.stringify(d.value)); w.HOME = w.S; w.render(); return;
-          }
-        } catch (e) { /* the page changed: offer the refresh instead */ }
-      }
+      // a newer first state: the page draws it again when the student is on My Classes, not typing (else it asks for the refresh)
+      if ((d.fn === 'appStudentState' || d.fn === 'studentGetHome') && page && page.ready()) { toFrame('home', { fn: d.fn, args: d.args, value: d.value }); return; }
       setUpdated({ fn: d.fn, args: d.args });
     });
   }
 
   function start() {
+    // never inside another site's frame (a page could lay its own buttons over the app's): GitHub Pages cannot send frame-ancestors
+    var framed = true; try { framed = window.top !== window.self; } catch (e) { framed = true; }
+    if (framed) { showOnly('scrSign'); signMsg('Open MyFiles in its own window: ' + location.href.split('#')[0], 'bad'); $('btnLink').hidden = true; return; }
     registerSw();
     MFA_STORE.openBest().then(function (s) {
       store = s;
@@ -541,9 +629,7 @@
       scanner = MFA_SCAN.create({ store: store, $: $, account: function () { return who && role === 'student' ? who.email : ''; },
         rpc: function (fn, args) { return req.rpc(fn, args); }, online: function () { return online() && engine.online; }, locked: function () { return lockOn; },
         toast: toast, onLink: function (a, c) { linkWith(a, c); }, onChange: function () { paintStatus(engine.state()); },
-        onSent: function () {
-          try { var w = $('page').contentWindow; if (w && w.HOME && w.S === w.HOME && typeof w.homeReload === 'function') w.homeReload(w.TAB || 'classes'); } catch (e) {}
-        } });
+        onSent: function () { toFrame('scanSent', null); } });
       engineEvents();
       bind();
       if (store.kind === 'memory') toast('This browser blocks storage, so nothing is kept offline. Open MyFiles in Safari or Chrome (not a private window).', 8000);

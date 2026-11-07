@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- The page (portal or student) runs in the sandboxed srcdoc frame below and inherits this policy, so it allows what that page
+       needs: its inline scripts and handlers ('unsafe-inline', 'unsafe-eval'), the pinned libraries the app hands it (blob:), Drive
+       previews. The app's own scripts are files ('self'). frame-ancestors cannot be set here (GitHub Pages sends no headers):
+       app.js refuses to run inside another site's frame. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://accounts.google.com/gsi/client https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://script.google.com https://script.googleusercontent.com https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; frame-src 'self' blob: https://accounts.google.com https://drive.google.com https://docs.google.com; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>MyFiles</title>
   <meta name="description" content="DABE MyFiles on your phone: your classes, files and forms. Saved to Drive, and still here when the internet is not.">
@@ -100,7 +105,7 @@
       <button id="upd" class="chip-btn" type="button" hidden>Updated, refresh</button>
       <button id="btnMe" class="me" type="button" aria-label="Account and settings"><span id="meAv">M</span></button>
     </header>
-    <div class="frame-wrap" id="frameWrap"><iframe id="page" title="MyFiles" allow="camera; geolocation; clipboard-write; fullscreen"></iframe></div>
+    <div class="frame-wrap" id="frameWrap"><iframe id="page" title="MyFiles" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads" allow="clipboard-write *; fullscreen *"></iframe></div>
     <button id="fab" class="fab" type="button" aria-label="Scan the class code" hidden><svg class="i" aria-hidden="true"><use href="#i-scan"/></svg></button>
   </section>
 
@@ -128,7 +133,7 @@
       </div>
       <details class="more">
         <summary>What MyFiles keeps on this <span class="devn">phone</span></summary>
-        <p class="cap">The MyFiles pages, a copy of the screens you opened (so they open at once and offline), changes not yet in Drive, your class scans until they are sent, and sealed test answers until they are sent. Signing out removes your copy and your sign-in. Sealed answers and scans not yet sent stay until they are sent or you remove everything.</p>
+        <p class="cap">The MyFiles pages, a copy of the screens you opened (so they open at once and offline), changes not yet in Drive, your class scans until they are sent, and sealed test answers until they are sent. Signing out removes your copy, the page's saved settings and drafts on this phone, and your sign-in. Sealed answers and scans not yet sent stay until they are sent or you remove everything.</p>
         <p class="cap" id="storeUse"></p>
         <button id="mWipe" class="btn danger wide" type="button"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove everything from this <span class="devn">phone</span></button>
       </details>
@@ -204,6 +209,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="config.js"></script>
+  <script src="js/libs.js"></script>
   <script src="js/lists.js"></script>
   <script src="js/diff.js"></script>
   <script src="js/store.js"></script>

@@ -19,22 +19,30 @@
     var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
     return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   }
+  // A scanned text is untrusted: it is never opened, never shown, only read for these parameters (as ClassCodes.gs ccParseScan_:
+  // the first of each name, at most 2000 characters).
   function params(text) {
-    var q = String(text || ''), i = q.indexOf('?'), out = {};
-    if (i < 0) return out;
+    var q = String(text || ''), i = q.indexOf('?'), out = Object.create(null);
+    if (i < 0 || q.length > 2000) return out;
     q.slice(i + 1).split('#')[0].split('&').forEach(function (part) {
       if (!part) return;
       var j = part.indexOf('='), k = j < 0 ? part : part.slice(0, j), v = j < 0 ? '' : part.slice(j + 1);
-      try { out[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { out[k] = v; }
+      try { v = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { v = ''; }
+      if (!(k in out)) out[k] = v.trim();
     });
     return out;
   }
-  function parseClassQr(text) { var p = params(text); return p.at && p.ak && p.ac ? { at: p.at, ak: p.ak, ac: p.ac } : null; }
-  // the link QR of MyFiles: { t:'myfiles-app' | 'myfiles-scan', api, code, role? }
+  function parseClassQr(text) {
+    var p = params(text);
+    if (!p.at || !p.ak || !p.ac || p.at.length > 120 || p.ak.length > 40 || !/^[A-Za-z0-9-]{1,40}$/.test(p.ac)) return null;
+    return { at: p.at, ak: p.ak, ac: p.ac };
+  }
+  // the link QR of MyFiles: { t:'myfiles-app' | 'myfiles-scan', api, code, role? } (the address is checked by the app: linkTarget)
   function parseLinkQr(text) {
-    var o; try { o = JSON.parse(text); } catch (e) { return null; }
-    if (!o || (o.t !== 'myfiles-scan' && o.t !== 'myfiles-app') || !o.code) return null;
-    return { api: String(o.api || ''), code: String(o.code).toUpperCase(), role: String(o.role || '') };
+    var o; if (String(text || '').length > 2000) return null;
+    try { o = JSON.parse(text); } catch (e) { return null; }
+    if (!o || typeof o !== 'object' || (o.t !== 'myfiles-scan' && o.t !== 'myfiles-app') || typeof o.code !== 'string' || !/^[A-Za-z0-9]{8}$/.test(o.code)) return null;
+    return { api: typeof o.api === 'string' ? o.api.slice(0, 300) : '', code: o.code.toUpperCase(), role: o.role === 'faculty' ? 'faculty' : 'student' };
   }
   function cleanPos(p) {
     if (!p || !p.coords) return null;

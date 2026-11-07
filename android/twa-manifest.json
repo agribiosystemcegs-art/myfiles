@@ -1,36 +1,50 @@
 {
   "packageId": "ph.edu.carsu.dabe.myfiles",
-  "host": "YOUR-HOST.example.edu.ph",
+  "host": "agribiosystemcegs-art.github.io",
   "name": "MyFiles",
   "launcherName": "MyFiles",
   "display": "standalone",
-  "orientation": "default",
   "themeColor": "#1D7A33",
   "themeColorDark": "#1D7A33",
-  "navigationColor": "#F4F7F5",
+  "navigationColor": "#FFFFFF",
   "navigationColorDark": "#18201B",
   "navigationDividerColor": "#E3E8E5",
   "navigationDividerColorDark": "#18201B",
   "backgroundColor": "#F4F7F5",
   "enableNotifications": false,
-  "startUrl": "/?source=app",
-  "iconUrl": "https://YOUR-HOST.example.edu.ph/icons/icon-512.png",
-  "maskableIconUrl": "https://YOUR-HOST.example.edu.ph/icons/icon-maskable-512.png",
-  "monochromeIconUrl": "https://YOUR-HOST.example.edu.ph/icons/monochrome-432.png",
+  "startUrl": "/myfiles/",
+  "iconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/icon-512.png",
+  "maskableIconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/icon-maskable-512.png",
+  "monochromeIconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/monochrome-432.png",
   "splashScreenFadeOutDuration": 300,
-  "signingKey": { "path": "./android.keystore", "alias": "myfiles" },
+  "signingKey": {
+    "path": "../../DABE-MyFiles-Android-Signing/myfiles-upload.keystore",
+    "alias": "myfiles"
+  },
   "appVersionName": "1.0.1",
   "appVersionCode": 2,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://YOUR-HOST.example.edu.ph/manifest.webmanifest",
+  "webManifestUrl": "https://agribiosystemcegs-art.github.io/myfiles/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
-  "alphaDependencies": { "enabled": false },
+  "alphaDependencies": {
+    "enabled": false
+  },
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://YOUR-HOST.example.edu.ph/",
-  "minSdkVersion": 21,
-  "orientationLock": false
+  "fullScopeUrl": "https://agribiosystemcegs-art.github.io/myfiles/",
+  "minSdkVersion": 24,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "MyFiles upload key",
+      "value": "56:DA:93:BB:FF:86:7F:38:C0:B8:26:96:F2:28:F2:74:2E:F1:59:AC:01:C2:81:45:54:BA:63:93:8B:B4:81:86"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "displayOverride": [],
+  "appVersion": "1.0.1"
 }
