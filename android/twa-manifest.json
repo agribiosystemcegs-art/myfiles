@@ -1,6 +1,6 @@
 {
   "packageId": "ph.edu.carsu.dabe.myfiles",
-  "host": "agribiosystemcegs-art.github.io",
+  "host": "agribiosystemcegs-eng.github.io",
   "name": "MyFiles",
   "launcherName": "MyFiles",
   "display": "standalone",
@@ -13,9 +13,9 @@
   "backgroundColor": "#F4F7F5",
   "enableNotifications": false,
   "startUrl": "/myfiles/",
-  "iconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/icon-512.png",
-  "maskableIconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/icon-maskable-512.png",
-  "monochromeIconUrl": "https://agribiosystemcegs-art.github.io/myfiles/icons/monochrome-432.png",
+  "iconUrl": "https://agribiosystemcegs-eng.github.io/myfiles/icons/icon-512.png",
+  "maskableIconUrl": "https://agribiosystemcegs-eng.github.io/myfiles/icons/icon-maskable-512.png",
+  "monochromeIconUrl": "https://agribiosystemcegs-eng.github.io/myfiles/icons/monochrome-432.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "../../DABE-MyFiles-Android-Signing/myfiles-upload.keystore",
@@ -25,7 +25,7 @@
   "appVersionCode": 2,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://agribiosystemcegs-art.github.io/myfiles/manifest.webmanifest",
+  "webManifestUrl": "https://agribiosystemcegs-eng.github.io/myfiles/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
   "alphaDependencies": {
@@ -34,7 +34,7 @@
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://agribiosystemcegs-art.github.io/myfiles/",
+  "fullScopeUrl": "https://agribiosystemcegs-eng.github.io/myfiles/",
   "minSdkVersion": 24,
   "orientation": "default",
   "fingerprints": [
