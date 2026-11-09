@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.2.1';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.2.2';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -18,6 +18,7 @@
   var cred = null, who = null, meta = {}, pageParams = {}, role = '', lockOn = false, activeSealed = '';
   var updated = null, gisReady = null, hello = null, shellStamp = '', page = null, pageLs = {}, pageSs = {}, lsTimer = null;
   var pageOwns = false, capsSeen = false, capsTimer = null;     // the page's top bar shows the status itself (its ownStatus): no strip here
+  var pageTab = null;                   // the student page's tab (its pageTab, 1.2.2): the scan button only on 'classes'; null = never said, as before
 
   /* ---------- small helpers ---------- */
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -327,7 +328,7 @@
   function paintChrome() {
     var stu = role === 'student';
     $('meAv').textContent = initials(who.name || who.email);
-    $('fab').hidden = !stu || lockOn;
+    paintFab();
     $('scrApp').classList.toggle('locked', lockOn);
     $('mScans').hidden = !stu; $('mLoc').hidden = !stu;
   }
@@ -349,7 +350,7 @@
       // A new page announces again. Another page's code starts with the strip; the same code keeps the bar it had (no jump), and a
       // page that has not announced a few seconds after loading gets the strip back: never both bars, never neither.
       capsSeen = false; clearTimeout(capsTimer);
-      if (html !== lastHtml) pageStatus(false);
+      if (html !== lastHtml) { pageStatus(false); pageTab = null; paintFab(); }
       f.onload = function () { T.shellLoaded = Math.round(performance.now()); clearTimeout(capsTimer); capsTimer = setTimeout(function () { if (!capsSeen) pageStatus(false); }, 4000); };
       f.srcdoc = MFA_SHIM.prepareHtml(html, stu ? { state: state, boot: boot } : { boot: boot });
       lastHtml = html;
@@ -380,6 +381,7 @@
       case 'clip': return navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(m.text).then(function () { return true; }, function () { return false; }) : false;
       case 'lib': return MFA_LIBS.getLib(m.url, { caches: window.caches, fetch: window.fetch.bind(window), subtle: crypto.subtle });
       case 'escape': closeSheets(); return null;
+      case 'tab': pageTab = m.tab; paintFab(); return null;
       case 'caps': capsSeen = true; pageStatus(m.status); return { ok: true, status: statusOf(engine.state()) };
       case 'ui':
         if (m.act === 'menu') { statTap(); return null; }
@@ -454,7 +456,7 @@
     lsSet('mfa.lock', on ? JSON.stringify({ until: Date.now() + 6 * 3600000, att: activeSealed }) : null);
     engine.setLock(on);
     $('scrApp').classList.toggle('locked', on);
-    $('fab').hidden = role !== 'student' || on;
+    paintFab();
     if (on) { closeSheets(); scanner.close(); }
     else { engine.sync(); scanner.sync(); }
     paintStatus(engine.state());
@@ -502,6 +504,9 @@
     else if (s.lastDriveAt) o.line = 'Saved to Drive, ' + when(s.lastDriveAt) + '.';
     return o;
   }
+  // The green scan button: a student's, never under the test lock, and only on My Classes once the page says its tab (an older page
+  // never says, so it keeps the button on every screen)
+  function paintFab() { $('fab').hidden = role !== 'student' || lockOn || (pageTab !== null && pageTab !== 'classes'); }
   function pageStatus(on) { pageOwns = !!on; $('scrApp').classList.toggle('pgstat', pageOwns); }
 
   /* ---------- the menu ---------- */

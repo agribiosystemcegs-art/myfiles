@@ -70,6 +70,12 @@ Tapping the chip opens the app's account sheet (`appUi('menu')`); Refresh applie
 (`appUi('refresh')`) and the page shows the result in its panel. An older page never announces and keeps the strip; a page
 that has not announced 4 seconds after loading gets the strip back.
 
+## The scan button on My Classes (1.2.2)
+
+The green scan button shows only on the student's My Classes. A MyFiles student page from Redesign v2 Stage 7c says which tab
+is on screen whenever it changes (`MYFILES_APP.pageTab`, a `tab` message on the page's port; the app accepts only the page's own
+tab ids). It stays hidden under the test lock, as before. An older page never says its tab and keeps the button on every screen.
+
 ## Phone notifications (1.1.0)
 
 MyFiles sends a notification to the phone for every new notice in the bell (Firebase Cloud Messaging; set up once in MyFiles
