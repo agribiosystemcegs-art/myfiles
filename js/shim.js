@@ -436,6 +436,9 @@
       case 'tab': return typeof m.tab === 'string' && PAGE_TABS[m.tab] === 1 && Object.keys(m).length === 2;
       case 'ts': return typeof m.id === 'string' && /^[\w-]{1,80}$/.test(m.id);
       case 'close': return Object.keys(m).length === 1;
+      case 'netLock': return typeof m.on === 'boolean';
+      case 'signOut': return typeof m.again === 'boolean';
+      case 'geo': return !!m.opts && typeof m.opts === 'object' && !Array.isArray(m.opts);
       default: return true;
     }
   }

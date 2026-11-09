@@ -23,6 +23,16 @@
       document.head.appendChild(s);
     });
   }
+  // The notices MyFiles showed (tag mf-...) close, and this phone's push subscription ends (getRegistration: never waits for a worker)
+  function endLocal() {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.getRegistration) return Promise.resolve();
+    return navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (!reg) return null;
+      var shown = reg.getNotifications ? reg.getNotifications().then(function (l) { (l || []).forEach(function (n) { if (/^mf-/.test(String(n.tag || ''))) n.close(); }); }) : null;
+      var sub = reg.pushManager && reg.pushManager.getSubscription ? reg.pushManager.getSubscription().then(function (x) { return x && x.unsubscribe(); }) : null;
+      return Promise.all([shown, sub]);
+    }).catch(function () { /* nothing to end */ });
+  }
   var sdkP = null;
   function sdk() { if (!sdkP) sdkP = SDK.reduce(function (p, src) { return p.then(function () { return loadScript(src); }); }, Promise.resolve()).catch(function (e) { sdkP = null; throw e; }); return sdkP; }
 
@@ -61,8 +71,9 @@
       return o.rpc('pushPrefsGet', []).then(function (r) { if (r && r.value && r.value.ok) prefs = r.value; }, function () {}).then(paint);
     }
     function guard(fn) { return function () { if (busy) return Promise.resolve(); if (!o.online()) { o.panel('bad', 'You’re Offline', 'Notifications need the internet to change.'); return Promise.resolve(); } busy = true;
-      var cap = new Promise(function (res, rej) { setTimeout(function () { rej(new Error('No answer yet. Check the internet and try again.')); }, 45000); });
-      return Promise.race([Promise.resolve().then(fn), cap]).catch(function (e) { o.panel('bad', 'Notifications Not Changed', (e && e.message) || 'Something went wrong. Try again.'); }).then(function () { busy = false; return paint(); }); }; }
+      var capT = null, cap = new Promise(function (res, rej) { capT = setTimeout(function () { rej(new Error('No answer yet. Check the internet and try again.')); }, 45000); });
+      return Promise.race([Promise.resolve().then(fn), cap]).catch(function (e) { o.panel('bad', 'Notifications Not Changed', (e && e.message) || 'Something went wrong. Try again.'); })
+        .then(function () { clearTimeout(capT); busy = false; return paint(); }); }; }
     // The tap on Allow Notifications: the phone's own question comes now, and only now.
     var allow = guard(function () {
       if (isIos() && !standalone()) { o.panel('bad', 'Add to Home Screen First', 'On iPhone, notifications work only from the MyFiles app on the Home Screen (iOS 16.4 or later).'); return; }
@@ -115,12 +126,27 @@
             .then(function (token) {
               if (!token) return;
               var swap = token === saved.token ? Promise.resolve() : o.rpc('pushUnregister', [saved.token]).catch(function () {});
-              return swap.then(function () { return o.rpc('pushRegister', [token, platform()]); }).then(function () { return o.kvPut(key(), { token: token, at: Date.now() }); });
+              return swap.then(function () { return o.rpc('pushRegister', [token, platform()]); }).then(function (r) {
+                if (!(r && r.value && r.value.ok)) return;                  // refused or busy: not kept as done, so the next open tries again
+                return o.kvPut(key(), { token: token, at: Date.now() });
+              });
             });
         });
       }).catch(function () { /* tried again next open */ });
     }
-    return { paint: paint, load: loadPrefs, allow: allow, off: off, save: save, refresh: refresh, isIos: isIos, standalone: standalone };
+    // Sign-out: this phone stops showing the account's notices, online or not (its notices on screen close, its push subscription
+    // ends), and MyFiles forgets the token when it can be reached (canCall). The kept token goes only once MyFiles said yes.
+    function signOut(email, canCall) {
+      var k = 'push:' + (email || '');
+      prefs = null;
+      return o.kvGet(k).then(function (p) {
+        var srv = email && p && p.token && canCall ? o.rpc('pushUnregister', [p.token]).then(function (r) {
+          if (r && r.value && r.value.ok) return o.kvDel(k);
+        }, function () { /* kept: the next sign-in of this account takes it over */ }) : null;
+        return Promise.all([endLocal(), srv]);
+      }).catch(function () {});
+    }
+    return { paint: paint, load: loadPrefs, allow: allow, off: off, save: save, refresh: refresh, signOut: signOut, isIos: isIos, standalone: standalone };
   }
   root.MFA_PUSH = { create: create };
 })(typeof self !== 'undefined' ? self : this);

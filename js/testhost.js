@@ -16,7 +16,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.3.0';               // keep equal to APP_VERSION in js/app.js
+  var VERSION = '1.3.1';               // keep equal to APP_VERSION in js/app.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -34,12 +34,21 @@
     try { history.replaceState(null, '', location.pathname); } catch (e) { /* kept in memory only */ }
     return o;
   })();
-  // The MyFiles a pass may go to: config.js's address when it is set; else an https script.google.com /exec (localhost: the simulator).
+  // The MyFiles a pass may go to: config.js's address when it is set; else the address learned and kept before (the app's pinned
+  // one, mfa.pin, when this screen shares its storage; or the one this screen's first test came from, kv ts:api), and no other;
+  // only with nothing learned yet, an https script.google.com /exec, which is then kept (localhost: the simulator).
+  var learned = '';
+  function fixedApi() { var f = typeof MYFILES_API === 'string' ? MYFILES_API.trim() : ''; return API_RE.test(f) ? f : ''; }
   function apiOk(a) {
-    var fixed = typeof MYFILES_API === 'string' ? MYFILES_API.trim() : '';
     if (LOCALHOST && DEV_RE.test(a)) return true;
-    if (fixed && API_RE.test(fixed)) return a === fixed;
+    if (fixedApi()) return a === fixedApi();
+    if (learned) return a === learned;
     return API_RE.test(a);
+  }
+  function learn() {                                                       // the kept address, read before any check
+    var pin = ''; try { pin = localStorage.getItem('mfa.pin') || ''; } catch (e) { /* storage blocked */ }
+    if (API_RE.test(pin)) { learned = pin; return Promise.resolve(); }
+    return kvGet('ts:api').then(function (v) { if (typeof v === 'string' && API_RE.test(v)) learned = v; });
   }
 
   /* ---------- the panel (as the app's): waiting, Failed; the test itself has the page's own panel ---------- */
@@ -142,7 +151,7 @@
     return MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return api; }, getCred: getCred });
   }
   function exchange() {
-    panel('wait', 'Opening Your Test…', 'This takes a moment.');
+    panel('wait', 'Opening Your Test', 'This takes a moment.');
     var r0 = requester(addr.api, null);
     return r0.post({ action: 'appTestPass', pass: addr.tp, dv: addr.dv }, { anonymous: true, timeout: 90000 }).then(function (j) {
       if (!j || j.ok !== true || !PASS_RE.test(String(j.sess || '')) || !j.html || !j.state) {
@@ -150,12 +159,13 @@
         return panel('bad', 'Test Not Open', (j && j.message) || 'MyFiles did not open the test.');
       }
       addr.tp = '';
+      if (!fixedApi() && !learned && API_RE.test(addr.api)) { learned = addr.api; kvPut('ts:api', learned); }   // later tests must use this one
       sess = { api: addr.api, sess: String(j.sess), until: Number(j.until) || (Date.now() + 3600000), attId: String(j.attId || ''), id: String(j.id || ''),
         title: String(j.title || ''), email: String((j.state && j.state.email) || '').toLowerCase() };
       var pg = { html: String(j.html), state: j.state };
       return Promise.all([kvPut('ts:sess', sess), kvPut('ts:page', pg), kvGet(lsKey())]).then(function (r) { begin(pg, r[2]); });
     }, function (e) {
-      if (e && e.net) return panel('bad', 'No Connection', 'The test screen needs the internet to open the test. Check your connection, then try again.', { retry: function () { addr.tp ? exchange() : closeScreen(); } });
+      if (e && e.net) return panel('bad', 'No Connection', 'The test screen needs the internet to open the test. Check your connection, then try again.', { retry: function () { if (addr.tp) exchange().catch(function (x) { panel('bad', 'Test Not Open', (x && x.message) || 'MyFiles did not open the test.'); }); else closeScreen(); } });
       addr.tp = '';
       panel('bad', 'Test Not Open', (e && e.message) || 'MyFiles did not open the test.');
     });
@@ -185,6 +195,8 @@
       store = s;
       sealed = new MFA_SEALED.Sealed({ store: store, subtle: window.crypto && crypto.subtle });
       sealed.prune().catch(function () {});
+      return learn();
+    }).then(function () {
       if (addr.tp) {
         if (!PASS_RE.test(addr.tp) || !DV_RE.test(addr.dv) || !apiOk(addr.api)) { addr.tp = ''; return panel('bad', 'Test Not Open', 'This test screen link is not one MyFiles made. Go back to MyFiles and press Start Test again.'); }
         return exchange();

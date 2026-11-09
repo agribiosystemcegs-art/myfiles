@@ -91,9 +91,13 @@
 
     /* ---------- the queue ---------- */
     function mine() { var em = o.account(); return scans.filter(function (s) { return s.account === em; }); }
+    var loaded = null;                                  // the first read of the queue: nothing is sent or counted before it
     function reload() {
-      return o.store.all('scans').then(function (l) { scans = l.map(function (x) { return x.val; }).filter(Boolean); render(); return scans; });
+      var p = o.store.all('scans').then(function (l) { scans = l.map(function (x) { return x.val; }).filter(Boolean); render(); return scans; });
+      if (!loaded) loaded = p.catch(function () { loaded = null; });
+      return p;
     }
+    function ready() { return loaded || reload().catch(function () {}); }
     function put(list) { return o.store.putMany('scans', list.map(function (s) { return { key: s.id, val: s }; })); }
     function waiting() { return mine().filter(function (s) { return s.status === 'waiting'; }); }
     function prune() {
@@ -155,10 +159,11 @@
         summary.offline = !!(e && (e.net || e.busy));
       }).then(reload).then(function () { summary.waiting = waiting().length; return summary; });
     }
-    function sync() {
+    function sync() { return ready().then(syncLoaded); }
+    function syncLoaded() {
       if (!o.account() || o.locked()) { render(); return Promise.resolve(null); }
       if (!waiting().length) { state.offline = false; state.error = ''; render(); return Promise.resolve(null); }
-      if (syncing) return syncing.then(function () { return waiting().length ? sync() : null; });
+      if (syncing) return syncing.then(function () { return waiting().length ? syncLoaded() : null; });
       if (!o.online()) { state.offline = true; render(); return Promise.resolve({ offline: true }); }
       state.busy = true; render();
       syncing = syncOnce().then(function (r) {
@@ -249,7 +254,8 @@
         hint(cls ? 'That is a class code. Scan the link code shown in MyFiles.' : 'That is not a MyFiles link code.');
         return Promise.resolve('wrong-kind');
       }
-      if (cls) return saveClass(text, cls);
+      if (cls) return saveClass(text, cls).catch(function () {        // the phone refused to keep it (storage full or blocked)
+        close(); showResult('bad', 'Scan Not Saved', 'This phone could not keep the scan. Free some space, then scan the code again.'); return 'error'; });
       hint(link ? 'That is a link code. Scan the class code your instructor shows.' : 'That is not a class code. Try again.');
       return Promise.resolve('unknown');
     }
@@ -376,7 +382,7 @@
     $('camClose').addEventListener('click', close);
     $('camTorch').addEventListener('click', torch);
     $('resDone').addEventListener('click', function () { $('result').hidden = true; });
-    $('resList').addEventListener('click', function () { $('result').hidden = true; $('scansSheet').hidden = false; reload(); });
+    $('resList').addEventListener('click', function () { $('result').hidden = true; $('scansSheet').hidden = false; reload().catch(function () {}); });
     // Send Now and the location switches end in the panel (o.panel); the sheet stays open under it
     function say(kind, title, line) { if (o.panel) o.panel(kind, title, line); }
     $('btnSend').addEventListener('click', function () {
@@ -390,7 +396,7 @@
         else say('ok', 'Scans Sent', (r && r.rejected ? plural(r.rejected, 'scan was', 'scans were') + ' not accepted. See the list.' : 'Every scan reached MyFiles.'));
       });
     });
-    $('btnLocOff').addEventListener('click', function () { setConsent('off'); denied(false); stripPositions().catch(function () {}).then(reload).then(function () { renderLoc(); sync(); say('ok', 'Location Off', 'Your scans are sent without location; your instructor will check your attendance.'); }); });
+    $('btnLocOff').addEventListener('click', function () { setConsent('off'); denied(false); stripPositions().catch(function () {}).then(reload).catch(function () {}).then(function () { renderLoc(); sync(); say('ok', 'Location Off', 'Your scans are sent without location; your instructor will check your attendance.'); }); });
     $('btnLocOn').addEventListener('click', function () { setConsent('on'); denied(false); renderLoc(); say('ok', 'Location On', 'When you scan a class code, the app checks once whether you are on campus.'); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('cam').hidden) close(); });
     document.addEventListener('visibilitychange', function () { if (document.hidden && !$('cam').hidden) close(); });

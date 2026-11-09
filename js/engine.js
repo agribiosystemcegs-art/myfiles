@@ -466,6 +466,7 @@
     start: function () {
       var self = this;
       this.stop();
+      if (!this.online) this.startHello();                      // stop() ended the offline check too: an offline start keeps checking
       var c = this.check().then(function () { self.sync(); self.prefetch(); });
       this.timers.prefetch = unref(setInterval(function () { if (self.online) self.prefetch(); }, this.t.prefetchEvery));
       this.timers.retry = unref(setInterval(function () { if (self.online && self.outbox.next(self.email())) self.sync(); }, 60000));

@@ -107,7 +107,7 @@
         return post(b, Object.assign({ timeout: 120000 }, opt || {})).then(function (j) { return { json: j || {}, at: at(j) }; });
       },
       pair: function (code, label) { return post({ action: 'scanPair', code: code, label: label }, { anonymous: true, timeout: 30000 }); },
-      // a linked phone signing out: MyFiles ends its token (an older MyFiles answers "Unknown request", which is fine)
+      // a linked phone signing out: MyFiles ends its token (appSignOut; a MyFiles without it answers an error or a page, which the app ignores)
       signOut: function () { return post({ action: 'appSignOut' }, { timeout: 15000 }); }
     };
   }

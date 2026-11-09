@@ -167,7 +167,7 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 
 /* ---------- sheets: the account sheet, My Scans, location, and the panel ---------- */
 .sheet-wrap { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: var(--scrim);
-  padding: 16px calc(8px + var(--safe-r)) calc(8px + var(--safe-b)) calc(8px + var(--safe-l)); animation: fade var(--dur-2) var(--ease) both; }
+  padding: calc(16px + var(--safe-t)) calc(8px + var(--safe-r)) calc(8px + var(--safe-b)) calc(8px + var(--safe-l)); animation: fade var(--dur-2) var(--ease) both; }
 .sheet-wrap.top { z-index: 40; }
 .sheet { width: 100%; max-width: 480px; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border-radius: var(--r-2xl);
   padding: 8px 16px 16px; box-shadow: var(--sh-modal); animation: up var(--dur-3) var(--ease) both; }
@@ -244,9 +244,9 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 
 /* ---------- a file the page made ---------- */
 .viewer { position: fixed; inset: 0; z-index: 30; background: var(--canvas); display: flex; flex-direction: column; }
-.viewer-bar { display: flex; align-items: center; gap: 8px; min-height: calc(52px + var(--safe-t)); padding: var(--safe-t) calc(8px + var(--safe-r)) 0 calc(8px + var(--safe-l));
+.viewer-bar { display: flex; align-items: center; gap: 8px; min-height: calc(60px + var(--safe-t)); padding: calc(4px + var(--safe-t)) calc(12px + var(--safe-r)) 4px calc(4px + var(--safe-l));
   background: var(--bg); box-shadow: inset 0 -1px 0 var(--line); font-size: 15px; font-weight: 500; }
-.viewer-bar .btn.sm { min-height: 40px; }
+.viewer-bar #vName { overflow-wrap: anywhere; line-height: 20px; padding: 6px 0; }
 .viewer iframe { flex: 1; border: 0; width: 100%; background: #fff; }
 
 /* ---------- toast (short notes; every action still ends in the panel) ---------- */
@@ -272,7 +272,7 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 .cam-round svg.i { width: 20px; height: 20px; }
 .cam-round[aria-pressed="true"] { background: #fff; color: var(--ink); }
 .cam-pad { width: 44px; flex: none; }
-.cam-hint, .cam-err { position: absolute; left: 20px; right: 20px; bottom: calc(110px + var(--safe-b)); margin: 0; text-align: center; color: rgba(255,255,255,.9); font-size: 15px; line-height: 22px; font-weight: 500; }
+.cam-hint, .cam-err { position: absolute; left: calc(20px + var(--safe-l)); right: calc(20px + var(--safe-r)); bottom: calc(110px + var(--safe-b)); margin: 0; text-align: center; color: rgba(255,255,255,.9); font-size: 15px; line-height: 22px; font-weight: 500; }
 .cam-err { bottom: auto; top: 38%; background: rgba(10,10,10,.8); color: #fff; padding: 16px; border-radius: var(--r-lg); font-weight: 400; box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
 
 /* ---------- Notifications (the account sheet): Allow, the settings, Turn Off ---------- */
@@ -282,9 +282,10 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 .push-box .btn.wide { margin: 8px 0 0; }
 .push-chk { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 15px; font-weight: 500; border-bottom: 1px solid var(--line); }
 .push-chk input { width: 20px; height: 20px; margin: 0; accent-color: var(--green-600); flex: none; }
-.push-times { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 0; }
-.push-times label { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
-.push-times input { min-height: 44px; padding: 4px 10px; border: 0; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line-2); background: var(--bg); color: inherit; }
+/* From and To side by side at every width (never one under the other half-way): each label over its field */
+.push-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 0; }
+.push-times label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-2); }
+.push-times input { width: 100%; min-width: 0; min-height: 44px; padding: 4px 10px; border: 0; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line-2); background: var(--bg); color: var(--ink); font-size: 15px; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade { from { opacity: 0; } }

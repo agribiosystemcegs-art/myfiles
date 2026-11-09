@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.3.0';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.1';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -263,7 +263,7 @@
       if (sh && sh.html && !first) {                               // the usual open: at once, from this phone
         shellStamp = sh.stamp || '';
         showApp(sh.html);
-        engine.start();
+        run();
         updateShell();
         warmLibs();
         return;
@@ -282,11 +282,13 @@
         shellStamp = r[0].stamp || '';
         readyStep('stScreens', 'ok', 'Saved Your Screens'); readyStep('stOpen', 'now');
         showApp(r[0].html);
-        engine.start();
+        run();
         warmLibs();
-      }).catch(function (e) { if (sh && sh.html) { showApp(sh.html); engine.start(); return; } noShell(e); });
+      }).catch(function (e) { if (sh && sh.html) { showApp(sh.html); run(); return; } noShell(e); });
     });
   }
+  // the engine's checks and timers, then the scans still waiting from before (a student's)
+  function run() { engine.start().then(function () { if (role === 'student') scanner.sync(); }); }
   // Getting Ready: named steps with checks, the screens counted as they are saved (no percentage)
   function readyStep(id, cls, text) {
     var li = $(id); if (!li) return;
@@ -420,10 +422,12 @@
     if (t !== 'ls' || !who) return;
     var em = who.email;
     clearTimeout(lsTimer);
-    lsTimer = setTimeout(function () {
+    var keep = function () {
       var size = 0; Object.keys(pageLs).forEach(function (x) { size += x.length + pageLs[x].length; });
       if (size <= PAGE_LS_MAX && who && who.email === em) kvPut('pagels:' + em, pageLs);
-    }, 400);
+    };
+    // the test page's own records (dabe-ts-: its sealed try, its answers) are kept at once: a closed app must find them to end its lock
+    if (String(k).indexOf('dabe-ts-') === 0) keep(); else lsTimer = setTimeout(keep, 400);
   }
   function loadPageStore() {
     pageSs = {};
@@ -451,7 +455,7 @@
       return p;
     },
     app: {
-      sealedStart: function (attId, payload) { activeSealed = String(attId); return sealed.start(attId, payload, who && who.email); },
+      sealedStart: function (attId, payload) { activeSealed = String(attId); if (lockOn) saveLock(); return sealed.start(attId, payload, who && who.email); },
       sealedSave: function (attId, answers, m) { return sealed.save(attId, answers, m); },
       sealedFinish: function (attId, m) { return sealed.finish(attId, m); },
       sealedGet: function (attId) { return sealed.get(attId); },
@@ -495,9 +499,10 @@
   }
 
   /* ---------- the net lock (a sealed test is open) ---------- */
+  function saveLock() { lsSet('mfa.lock', lockOn ? JSON.stringify({ until: Date.now() + 6 * 3600000, att: activeSealed }) : null); }
   function setLock(on) {
     on = !!on; lockOn = on;
-    lsSet('mfa.lock', on ? JSON.stringify({ until: Date.now() + 6 * 3600000, att: activeSealed }) : null);
+    saveLock();
     engine.setLock(on);
     $('scrApp').classList.toggle('locked', on);
     paintFab();
@@ -573,7 +578,7 @@
         var y = document.createElement('div'); y.className = 'why'; y.textContent = it.message || 'MyFiles did not accept this change.'; li.appendChild(y);
         var a = document.createElement('div'); a.className = 'acts';
         var r = document.createElement('button'); r.className = 'btn sm secondary'; r.type = 'button'; r.textContent = 'Try Again'; r.onclick = function () { engine.retry(it.id); paintMenu(); panel('ok', 'Sending Again', 'This change goes to MyFiles again now. The status bar shows when it is in Drive.'); };
-        var x = document.createElement('button'); x.className = 'btn sm ghost'; x.type = 'button'; x.textContent = 'Discard'; x.onclick = function () {
+        var x = document.createElement('button'); x.className = 'btn sm ghost'; x.type = 'button'; x.textContent = 'Discard Change'; x.onclick = function () {
           ask({ title: 'Discard This Change?', line: 'It is removed from this ' + DEV_NOUN + ' and never reaches MyFiles.', yes: 'Discard Change', danger: true, icon: 'i-trash' }).then(function (yes) {
             if (!yes) return; engine.discard(it.id); paintMenu(); panel('ok', 'Change Discarded', 'It was removed from this ' + DEV_NOUN + '.'); }); };
         a.appendChild(r); a.appendChild(x); li.appendChild(a);
@@ -590,7 +595,7 @@
       cl.appendChild(li);
     });
     $('menuVer').textContent = 'MyFiles app ' + APP_VERSION + (devApi() ? ' (dev: ' + devApi() + ')' : '');
-    try { navigator.storage.estimate().then(function (e) { $('storeUse').textContent = 'About ' + Math.max(1, Math.round((e.usage || 0) / 1048576)) + ' MB used on this ' + DEV_NOUN + '.'; }); } catch (e) {}
+    try { navigator.storage.estimate().then(function (e) { $('storeUse').textContent = 'About ' + Math.max(1, Math.round((e.usage || 0) / 1048576)) + ' MB used on this ' + DEV_NOUN + '.'; }, function () {}); } catch (e) {}
   }
   // the strip's status (or the page's chip): sign in again when that is the problem, else the account sheet
   function statTap() {
@@ -604,7 +609,7 @@
   function applyUpdate() {
     var u = updated; setUpdated(null); if (!u) return;
     if (u.fn === '__app') { location.reload(); return; }
-    if (u.fn === '__shell') { kvGet('shell:' + role).then(function (sh) { if (sh && sh.html) { shellStamp = sh.stamp; showApp(sh.html); } }); return; }
+    if (u.fn === '__shell') { kvGet('shell:' + role).then(function (sh) { if (sh && sh.html) { shellStamp = sh.stamp; return showApp(sh.html); } }).catch(function () { setUpdated(u); }); return; }
     toFrame('rerun', { fn: u.fn });
   }
   // Refresh in the page's top bar: a waiting update first, else Sync Now; the answer is for the page's own panel
@@ -620,7 +625,7 @@
     if (s.waiting) return { kind: 'saved', title: 'Still Sending', line: plural(s.waiting, 'change is', 'changes are') + ' on the way to Drive.' };
     return { kind: 'ok', title: 'Up to Date', line: s.lastDriveAt ? 'Saved to Drive, ' + when(s.lastDriveAt) + '.' : 'Nothing is waiting on this ' + DEV_NOUN + '.' };
   }
-  function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; if (push) push.load(); }
+  function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; if (push) push.load().catch(function () {}); }
   function closeSheets() { ['menu', 'scansSheet', 'locSheet'].forEach(function (id) { $(id).hidden = true; }); }
   // Sync Now: from the account sheet it ends in the panel; asked by the page, a short note (the page shows its own panel);
   // 'page' (Refresh in the page's top bar): nothing here, the page's panel says it
@@ -649,9 +654,12 @@
     viewUrl = URL.createObjectURL(show ? blob : new Blob([blob], { type: 'application/octet-stream' }));
     $('vFrame').src = show ? viewUrl : 'about:blank'; $('vSave').href = viewUrl; $('vSave').setAttribute('download', fileName(name));
     $('vName').textContent = fileName(name); $('viewer').hidden = false;
-    if (!show) toast('Tap Save to open this file.');
+    if (!show) toast('Tap Save File to open this file.');
+    setTimeout(function () { try { $('vClose').focus(); } catch (e) {} }, 30);
   }
-  $('vClose').addEventListener('click', function () { $('viewer').hidden = true; $('vFrame').src = 'about:blank'; if (viewUrl) { URL.revokeObjectURL(viewUrl); viewUrl = ''; } });
+  function closeViewer() { $('viewer').hidden = true; $('vFrame').src = 'about:blank'; if (viewUrl) { URL.revokeObjectURL(viewUrl); viewUrl = ''; } }
+  $('vClose').addEventListener('click', closeViewer);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('viewer').hidden && !askDone) closeViewer(); });
 
   /* ---------- sign-out and removing everything ---------- */
   function signOut(o) {
@@ -668,16 +676,20 @@
     panel('wait', 'Signing Out', 'Removing your copy of MyFiles from this ' + DEV_NOUN + '.');
     engine.stop();
     var em = who && who.email, wasDevice = cred && cred.type === 'device';
-    // a linked phone's token is also ended at MyFiles (best effort; DesktopApi.gs appSignOut): a copy of it no longer works
-    var revoke = wasDevice && online() && !lockOn ? req.signOut().catch(function () {}) : Promise.resolve();
-    // this phone's notifications end with the account (best effort): the next person on it does not get them
-    revoke = revoke.then(function () { return em ? kvGet('push:' + em) : null; }).then(function (p) {
-      return p && p.token && online() && !lockOn ? req.rpc('pushUnregister', [p.token]).catch(function () {}).then(function () { return kvDel('push:' + em); }) : null; });
+    var canCall = online() && !lockOn;
+    // this phone's notifications end with the account first, while its sign-in still works: the notices on screen close and the
+    // push subscription ends on the phone (offline too), and MyFiles forgets the token when it answers
+    var revoke = (push ? push.signOut(em, canCall) : Promise.resolve()).catch(function () {}).then(function () {
+      // then a linked phone's token is ended at MyFiles (appSignOut; best effort): a copy of it no longer works. A MyFiles without
+      // appSignOut yet answers with an error or a page that is not JSON: the sign-out on this phone goes on all the same.
+      return wasDevice && canCall ? req.signOut().catch(function () {}) : null;
+    });
     revoke.then(function () { return engine.cache ? engine.cache.clear() : null; }).then(function () {
       return Promise.all([kvDel('who'), saveCred(null), em ? forget(em) : null]);
     }).then(function () {
       try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
       who = null; role = ''; engine.setAccount(null); pageLs = {}; pageSs = {}; clearTimeout(lsTimer);
+      if (lockOn) { lockOn = false; activeSealed = ''; saveLock(); engine.setLock(false); $('scrApp').classList.remove('locked'); }   // its sealed answers stay
       if (page) { page.close(); page = null; }
       $('page').srcdoc = ''; closeSheets(); hidePanel();
       showSign(o.again ? 'Choose the account to sign in with.' : 'Signed out.');
@@ -704,9 +716,11 @@
     if (!navigator.serviceWorker || !online()) return;
     navigator.serviceWorker.ready.then(function (reg) { if (reg.active) reg.active.postMessage({ type: 'warmLibs', role: role }); }).catch(function () {});
   }
+  var swReg = null;
   function registerSw() {
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('sw.js').then(function (reg) {
+      swReg = reg;
       reg.addEventListener('updatefound', function () {
         var nw = reg.installing; if (!nw) return;
         nw.addEventListener('statechange', function () { if (nw.state === 'installed' && navigator.serviceWorker.controller) setUpdated({ fn: '__app' }); });
@@ -722,7 +736,7 @@
     $('linkForm').addEventListener('submit', function (e) { e.preventDefault(); $('codeIn').blur(); linkWith('', $('codeIn').value); });
     $('btnLinkScan').addEventListener('click', function () { scanner.open('link'); });
     $('btnDev').addEventListener('click', devSignIn);
-    $('btnNoShellRetry').addEventListener('click', function () { if (who) enterApp(); else showSign(); });
+    $('btnNoShellRetry').addEventListener('click', function () { if (who) enterApp().catch(noShell); else showSign(); });
     $('btnNoShellOut').addEventListener('click', function () { signOut({}); });
     $('stat').addEventListener('click', statTap);
     $('btnMe').addEventListener('click', openMenu);
@@ -737,7 +751,7 @@
     $('askNo').addEventListener('click', function () { if (askDone) askDone(false); });
     $('ask').addEventListener('click', function (e) { if (e.target === $('ask') && askDone) askDone(false); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && askDone) askDone(false); });
-    $('mScans').addEventListener('click', function () { $('menu').hidden = true; scanner.reload(); $('scansSheet').hidden = false; scanner.sync(); });
+    $('mScans').addEventListener('click', function () { $('menu').hidden = true; scanner.reload().catch(function () {}); $('scansSheet').hidden = false; scanner.sync(); });
     $('mLoc').addEventListener('click', function () { $('menu').hidden = true; scanner.renderLoc(); $('locSheet').hidden = false; });
     $('mOut').addEventListener('click', function () { $('menu').hidden = true; signOut({}); });
     $('mWipe').addEventListener('click', wipe);
@@ -754,7 +768,11 @@
       engine.check().then(function (ok) { if (ok) { engine.sync(); scanner.sync(); engine.prefetch(); updateShell(); } });
     });
     window.addEventListener('pagehide', function () { engine.flush(); });
-    setInterval(function () { if (who && !lockOn && engine.online && !document.hidden) updateShell(); }, 30 * 60000);   // a newer MyFiles page
+    setInterval(function () {                                  // a newer MyFiles page, and a newer app (an app left open for days)
+      if (!who || lockOn || !engine.online || document.hidden) return;
+      updateShell();
+      if (swReg && swReg.update) swReg.update().catch(function () { /* checked again next time */ });
+    }, 30 * 60000);
     // a warning before closing with changes not yet sent, where the browser allows it
     window.addEventListener('beforeunload', function (e) {
       if (!who) return;
@@ -768,16 +786,16 @@
       }, 1500);
     }
     if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) {
-      var d = e.data || {};
+      var d = e.data;
+      if ((e.origin && e.origin !== location.origin) || !d || typeof d !== 'object' || typeof d.type !== 'string') return;   // this app's worker only
       if (d.type === 'libs') T.libs = d;
       if (d.type === 'ntfOpen' && who && !lockOn) { closeSheets(); ntfToPage(ntfClean(d.target, d.id)); }   // a tapped notification, the app already open
       if (d.type === 'ntfNew' && who) toFrame('ntfArrived', null);                                         // the app is open: the bell's count only
-      if (d.type === 'ntfNew' && d.tag) ntfShownClose(d.tag);                                               // and the shown notification goes once the bell has it
+      if (d.type === 'ntfNew' && typeof d.tag === 'string' && /^mf-[\w-]{1,60}$/.test(d.tag)) ntfShownClose(d.tag);                                               // and the shown notification goes once the bell has it
     });
     $('pushAllow').addEventListener('click', function () { push.allow(); });
     $('pushOff').addEventListener('click', function () { push.off(); });
     $('pushSave').addEventListener('click', function () { push.save(); });
-    $('resDone').addEventListener('click', function () { $('resDone').hidden = false; $('resList').hidden = false; });
   }
 
   function engineEvents() {
@@ -822,7 +840,9 @@
       bind();
       if (store.kind === 'memory') toast('This browser blocks storage, so nothing is kept offline. Open MyFiles in Safari or Chrome (not a private window).', 8000);
       sealed.prune().catch(function () {});
-      scanner.prune().then(function () { return scanner.reload(); });
+      // a test lock kept from before whose try is no longer on this phone (sent and cleared): nothing to protect, so the lock ends
+      if (lockOn && activeSealed) sealed.get(activeSealed).then(function (rec) { if (!rec && lockOn) setLock(false); }).catch(function () {});
+      scanner.prune().then(function () { return scanner.reload(); }).catch(function () { /* the list stays empty; scans stay in storage */ });
       return Promise.all([kvGet('cred'), kvGet('who')]);
     }).then(function (r) {
       cred = r[0]; who = r[1];

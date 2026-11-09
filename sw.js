@@ -18,7 +18,7 @@
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.3.0';
+var VERSION = '1.3.1';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
@@ -26,7 +26,7 @@ var SHELL = [
   './', 'index.html', 'test.html', 'style.css', 'config.js', 'manifest.webmanifest', 'fonts/Geist-Variable.woff2',
   'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/push.js', 'js/app.js', 'js/testhost.js',
   'vendor/jsQR.js', 'vendor/firebase-app-compat.js', 'vendor/firebase-messaging-compat.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
-  'icons/apple-touch-icon.png'
+  'icons/apple-touch-icon.png', 'icons/monochrome-432.png', 'icons/icon-maskable-192.png'   // the push badge and the manifest's icons, offline too
 ];
 // The libraries the pages load, by address -> SHA-256 (hex), and the ones fetched ahead: js/libs.js (shared with the app)
 var PINS = self.MFA_LIBS.PINS, WARM = self.MFA_LIBS.WARM;
@@ -81,7 +81,7 @@ self.addEventListener('fetch', function (e) {
   if (url.pathname.indexOf('/.well-known/') >= 0) return;
   if (DEV) {
     e.respondWith(caches.open(CACHE).then(function (c) {
-      var key = req.mode === 'navigate' ? 'index.html' : req;
+      var key = req.mode === 'navigate' ? (/\/test\.html$/.test(url.pathname) ? 'test.html' : 'index.html') : req;   // each page under its own name
       return fetch(req).then(function (res) { if (res && res.ok && res.type === 'basic') c.put(key, res.clone()); return res; })
         .catch(function () { return c.match(key, { ignoreSearch: true }).then(function (hit) { return hit || Response.error(); }); });
     }));
@@ -103,6 +103,7 @@ self.addEventListener('fetch', function (e) {
 });
 
 self.addEventListener('message', function (e) {
+  if (e.origin && e.origin !== self.location.origin) return;     // this app's own windows only
   var d = e.data || {};
   if (d === 'version' && e.source) { e.source.postMessage({ type: 'version', version: VERSION }); return; }
   if (d.type === 'warmLibs') {

@@ -76,6 +76,18 @@ The green scan button shows only on the student's My Classes. A MyFiles student 
 is on screen whenever it changes (`MYFILES_APP.pageTab`, a `tab` message on the page's port; the app accepts only the page's own
 tab ids). It stays hidden under the test lock, as before. An older page never says its tab and keeps the button on every screen.
 
+## Polish (1.3.1)
+
+The file viewer has a back arrow and Save File; sheets keep clear of the iPhone status bar; quiet hours show From and To side
+by side. Scans left waiting are sent when the app opens; an offline app keeps checking for the connection after a restart; a
+kept test lock ends at the start when its try is no longer on the phone, and signing out ends it; the page's netLock, signOut
+and geo requests and the worker's messages are shape and origin checked; a scan the phone cannot store ends in the panel.
+Sign-out first ends this phone's notifications (the MyFiles notices on screen close and the push subscription ends, offline
+too; MyFiles forgets the token when it answers), then asks MyFiles to end a linked phone's token (`appSignOut`; a MyFiles
+without that handler yet is ignored). A refused push re-registration is tried again at the next open. The test screen sends a
+pass only to `MYFILES_API`, else to the address learned before (the app's pinned one, or the first test's), never another:
+set `MYFILES_API` in config.js so a phone that never opened a test is covered too.
+
 ## Phone notifications (1.1.0)
 
 MyFiles sends a notification to the phone for every new notice in the bell (Firebase Cloud Messaging; set up once in MyFiles

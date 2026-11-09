@@ -48,8 +48,8 @@
     // the page's own numbers (its timer and its leave count), kept with the answers
     meta: function (rec, m) {
       if (!m || typeof m !== 'object') return;
-      if (isFinite(m.usedMs) && m.usedMs !== null) rec.pageUsedMs = Math.max(0, Math.floor(Number(m.usedMs)));
-      if (isFinite(m.leaveCount) && m.leaveCount !== null) rec.pageLeaves = Math.max(rec.pageLeaves || 0, Math.floor(Number(m.leaveCount)));
+      if (typeof m.usedMs === 'number' && isFinite(m.usedMs)) rec.pageUsedMs = Math.max(0, Math.floor(m.usedMs));             // numbers only: '' or true is no time
+      if (typeof m.leaveCount === 'number' && isFinite(m.leaveCount)) rec.pageLeaves = Math.max(rec.pageLeaves || 0, Math.floor(m.leaveCount));
     },
     used: function (rec) { return isFinite(rec.pageUsedMs) ? rec.pageUsedMs : (rec.usedMs || 0); },
     // the leave count: the page's or the app's own, whichever is higher (a page that was changed cannot lower what the app saw)
