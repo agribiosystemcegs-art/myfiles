@@ -164,6 +164,17 @@
           };
           apply(); return;
         }
+        if (type === 'ntfOpen') {                               // a tapped phone notification: the page's bell opens the item and marks it read
+          var t2 = 0, open = function () {
+            try {
+              var ready = typeof win.ntfPush === 'function' && doc.readyState === 'complete' && (win.DATA || win.HOME);
+              if (ready || (t2 > 40 && typeof win.ntfPush === 'function')) { win.ntfPush(String((d && d.target) || ''), String((d && d.id) || '')); return; }
+            } catch (e) { return; }
+            if (t2++ < 60) setTimeout(open, 250);
+          };
+          open(); return;
+        }
+        if (type === 'ntfArrived') { if (typeof win.ntfArrived === 'function') win.ntfArrived(); return; }   // the app is open: only the count moves
         if (type === 'scanSent') {                              // a class scan reached MyFiles: My Classes again
           if (win.HOME && win.S === win.HOME && typeof win.homeReload === 'function') win.homeReload(win.TAB || 'classes');
         }

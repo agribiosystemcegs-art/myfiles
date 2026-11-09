@@ -9,16 +9,21 @@
  *   Google Fonts: the network first, the kept copy offline ('myfiles-fonts-1').
  *   Never touched: MyFiles itself (POST requests, never kept here: the answers are personal), Google sign-in, every other site.
  *   The page itself runs in a sandboxed frame this worker does not control: the app hands it the libraries (js/libs.js getLib).
+ *   Phone notifications (Firebase Cloud Messaging, Push.gs in MyFiles): the background handler is here, in this worker. FCM sends
+ *     data-only messages ({ data: { title, body, id, target, kind } }); this worker shows them, unless a MyFiles window is open and
+ *     in view (the bell already has the notice: that window only hears 'ntfNew', so nothing is shown twice). A tap focuses the open
+ *     app, or opens it, at the notice's target (the page's own bell targets), and the bell marks it read. The Firebase SDK
+ *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.0.2';
+var VERSION = '1.1.0';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
 var SHELL = [
   './', 'index.html', 'style.css', 'config.js', 'manifest.webmanifest',
-  'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/app.js',
-  'vendor/jsQR.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
+  'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/push.js', 'js/app.js',
+  'vendor/jsQR.js', 'vendor/firebase-app-compat.js', 'vendor/firebase-messaging-compat.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png', 'icons/student-mark-white.svg', 'icons/faculty-mark-white.svg'
 ];
 // The libraries the pages load, by address -> SHA-256 (hex), and the ones fetched ahead: js/libs.js (shared with the app)
@@ -103,4 +108,35 @@ self.addEventListener('message', function (e) {
       return Promise.all(list.map(function (u) { return c.match(u).then(function (hit) { return hit ? 'kept' : fetchLib(u).then(function (r) { return r && r.ok ? 'fetched' : 'failed'; }, function () { return 'failed'; }); }); }));
     }).then(function (r) { if (e.source) e.source.postMessage({ type: 'libs', result: r, urls: list }); }));
   }
+});
+
+/* ---------- phone notifications (FCM background handler) ---------- */
+// The data of one FCM message, as plain short text (never markup): { title, body, id, target }
+function pushData(e) {
+  var p = {}; try { p = e.data ? e.data.json() : {}; } catch (x) { p = {}; }
+  var d = p.data || (p.notification ? { title: p.notification.title, body: p.notification.body } : {}) || {};
+  var s = function (v, n) { return String(v == null ? '' : v).slice(0, n); };
+  return { title: s(d.title, 80) || 'MyFiles', body: s(d.body, 160) || 'You have a new notice.', id: /^[\w-]{0,40}$/.test(s(d.id, 40)) ? s(d.id, 40) : '', target: s(d.target, 300) };
+}
+function appWindows() { return self.clients.matchAll({ type: 'window', includeUncontrolled: true }); }
+self.addEventListener('push', function (e) {
+  var d = pushData(e);
+  e.waitUntil(appWindows().then(function (list) {
+    var seen = list.filter(function (c) { return c.visibilityState === 'visible'; });
+    if (seen.length) { seen.forEach(function (c) { c.postMessage({ type: 'ntfNew', id: d.id }); }); return; }   // in view: the bell has it
+    return self.registration.showNotification(d.title, { body: d.body, tag: d.id || undefined, icon: 'icons/icon-192.png', badge: 'icons/monochrome-432.png',
+      data: { id: d.id, target: d.target } });
+  }));
+});
+self.addEventListener('notificationclick', function (e) {
+  var d = (e.notification && e.notification.data) || {};
+  e.notification.close();
+  var url = new URL('./', self.registration.scope);
+  if (d.target) url.searchParams.set('go', d.target);
+  if (d.id) url.searchParams.set('ntf', d.id);
+  e.waitUntil(appWindows().then(function (list) {
+    var w = list.filter(function (c) { return new URL(c.url).pathname.indexOf(new URL(self.registration.scope).pathname) === 0; })[0];
+    if (w) { w.postMessage({ type: 'ntfOpen', target: d.target || '', id: d.id || '' }); return w.focus ? w.focus() : null; }   // the open app routes it
+    return self.clients.openWindow ? self.clients.openWindow(url.href) : null;                                                   // a closed app opens there
+  }));
 });

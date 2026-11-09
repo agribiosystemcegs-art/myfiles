@@ -31,6 +31,8 @@ Changes go to Drive as soon as there is a connection. Students also get a scan b
 | `manifest.webmanifest`, `icons/` | Name, colors and icons (the MyFiles Student icon) |
 | `android/` | The Android app file kit: `twa-manifest.json` and `.well-known/assetlinks.json` templates |
 | `vendor/jsQR.js`, `LICENSES/jsQR.txt` | jsQR 1.4.0 (Apache-2.0), the QR reader for iPhone |
+| `js/push.js` | Phone notifications: Allow Notifications, Turn Off, quiet hours (the menu's Notifications) |
+| `vendor/firebase-*-compat.js`, `LICENSES/firebase.txt` | Firebase JS SDK 10.14.1 (Apache-2.0), app and messaging, for the notification token |
 | `Dockerfile`, `nginx.conf` | Optional: host it on the school server |
 
 ## 1. Fill in config.js
@@ -49,6 +51,15 @@ var DOMAIN = 'carsu.edu.ph';
 
 After any later change to the app's files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` (the same value).
 Phones get the new version the next time they open the app online.
+
+## Phone notifications (1.1.0)
+
+MyFiles sends a notification to the phone for every new notice in the bell (Firebase Cloud Messaging; set up once in MyFiles
+Custodian › Setup › Push Notifications, see `push-setup.md` in DABE-Redesign-v2). In the app: Me › Notifications › Allow
+Notifications. The phone asks for permission only then, never when the app opens. The lock screen shows the notice's title and
+a generic line; tapping it opens the app at the item and marks it read. While the app is open and in view, nothing pops up (the
+bell has it). On iPhone and iPad it works only from the Home Screen app (iOS 16.4 or later). Signing out turns notifications
+off for that phone. The service worker shows the notices itself; the Firebase SDK runs only in the app's window, to get the token.
 
 ## 2. The Google web client (for "Continue with Google")
 

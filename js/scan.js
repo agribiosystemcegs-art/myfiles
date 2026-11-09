@@ -204,7 +204,7 @@
       var ico = { ok: 'i-check', late: 'i-clock', wait: 'i-hour', bad: 'i-alert', up: 'i-cloudup' }[kind] || 'i-check';
       $('resIco').className = 'res-ico ' + (kind === 'ok' ? '' : kind);
       $('resIcoUse').setAttribute('href', '#' + ico);
-      $('resTitle').textContent = title; $('resLine').textContent = line || '';
+      $('resTitle').textContent = title; $('resLine').textContent = line || ''; $('resDone').hidden = false; $('resList').hidden = false;
       $('result').hidden = false;
       if ($('toast')) $('toast').hidden = true;
       setTimeout(function () { try { $('resDone').focus(); } catch (e) {} }, 30);

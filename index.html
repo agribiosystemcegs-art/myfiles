@@ -6,7 +6,7 @@
        needs: its inline scripts and handlers ('unsafe-inline', 'unsafe-eval'), the pinned libraries the app hands it (blob:), Drive
        previews. The app's own scripts are files ('self'). frame-ancestors cannot be set here (GitHub Pages sends no headers):
        app.js refuses to run inside another site's frame. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://accounts.google.com/gsi/client https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://script.google.com https://script.googleusercontent.com https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; frame-src 'self' blob: https://accounts.google.com https://drive.google.com https://docs.google.com; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://accounts.google.com/gsi/client https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://script.google.com https://script.googleusercontent.com https://accounts.google.com https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://fcm.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; frame-src 'self' blob: https://accounts.google.com https://drive.google.com https://docs.google.com; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>MyFiles</title>
   <meta name="description" content="DABE MyFiles on your phone: your classes, files and forms. Saved to Drive, and still here when the internet is not.">
@@ -121,6 +121,19 @@
         <button id="mLoc" class="row-btn" type="button" hidden><svg class="i" aria-hidden="true"><use href="#i-pin"/></svg><span>Location at scan</span></button>
         <button id="mOut" class="row-btn" type="button"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg><span>Sign out</span></button>
       </div>
+      <div id="pushRow" class="push">
+        <h2 class="sheet-h">Notifications</h2>
+        <p id="pushLine" class="cap"></p>
+        <button id="pushAllow" class="btn primary wide" type="button" hidden>Allow Notifications</button>
+        <div id="pushPrefs" hidden>
+          <label class="push-chk"><input type="checkbox" id="pushOn"> <span>Notify Me on My Phones</span></label>
+          <label class="push-chk"><input type="checkbox" id="pushQuiet"> <span>Quiet Hours</span></label>
+          <div class="push-times"><label>From <input type="time" id="pushFrom" value="21:00"></label><label>To <input type="time" id="pushTo" value="06:00"></label></div>
+          <p class="cap">Philippine time. No notice comes in the quiet hours; the bell still gets it.</p>
+          <button id="pushSave" class="btn secondary wide" type="button">Save Settings</button>
+          <button id="pushOff" class="btn ghost wide" type="button" hidden>Turn Off on This Phone</button>
+        </div>
+      </div>
       <div id="changesBox" hidden>
         <h2 class="sheet-h">Changes on this <span class="devn">phone</span></h2>
         <ul id="changes" class="list"></ul>
@@ -218,6 +231,7 @@
   <script src="js/sealed.js"></script>
   <script src="js/shim.js"></script>
   <script src="js/scan.js"></script>
+  <script src="js/push.js"></script>
   <script src="vendor/jsQR.js" defer></script>
   <script src="js/app.js"></script>
 </body>

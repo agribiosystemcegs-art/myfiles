@@ -6,14 +6,15 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.0.2';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.1.0';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var T = window.__mfaTimes = { start: Math.round(performance.now()) };
 
-  var store, req, engine, sealed, scanner;
+  var store, req, engine, sealed, scanner, push;
+  var pendingNtf = null;                // a tapped notification's { target, id }, handed to the page once it is open
   var cred = null, who = null, meta = {}, pageParams = {}, role = '', lockOn = false, activeSealed = '';
   var updated = null, gisReady = null, hello = null, shellStamp = '', page = null, pageLs = {}, pageSs = {}, lsTimer = null;
 
@@ -39,10 +40,27 @@
   var toastTimer = null;
   function toast(text, ms) { var t = $('toast'); t.textContent = text; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, ms || 3500); }
   function online() { return navigator.onLine !== false; }
+  // The app's confirmation panel (the result sheet of index.html): 'wait' first, then 'ok' or 'bad'.
+  function panel(kind, title, line) {
+    $('resIco').className = 'res-ico ' + (kind === 'ok' ? '' : kind === 'wait' ? 'wait' : 'bad');
+    $('resIcoUse').setAttribute('href', '#' + (kind === 'ok' ? 'i-check' : kind === 'wait' ? 'i-hour' : 'i-alert'));
+    $('resTitle').textContent = title; $('resLine').textContent = line || ''; $('resList').hidden = true; $('resDone').hidden = kind === 'wait';
+    $('menu').hidden = true; $('result').hidden = false; $('toast').hidden = true;
+    if (kind !== 'wait') setTimeout(function () { try { $('resDone').focus(); } catch (e) {} }, 30);
+  }
   function kvGet(k) { return store.get('kv', k).catch(function () { return null; }); }
   function kvPut(k, v) { return store.put('kv', k, v).catch(function () {}); }
   function kvDel(k) { return store.del('kv', k).catch(function () {}); }
   document.querySelectorAll('.devn').forEach(function (e) { e.textContent = DEV_NOUN; });
+
+  // A notification's target and id as the page's bell takes them (Notify.gs): short plain text only, else nothing.
+  function ntfClean(target, id) {
+    target = String(target || ''); id = String(id || '');
+    if (!/^[^<>"'`\\\u0000-\u001f]{0,300}$/.test(target) || !/^[\w-]{0,40}$/.test(id) || (!target && !id)) return null;
+    return { target: target, id: id };
+  }
+  // The page is open and its bell is there: open the item (the frame's shim waits for the page to finish loading).
+  function ntfToPage(n) { if (!n) return; if (page && page.ready()) toFrame('ntfOpen', n); else pendingNtf = n; }
 
   /* ---------- settings: config.js, dev mode (localhost only), the pinned MyFiles address ---------- */
   function devApi() { if (!LOCALHOST) return ''; return lsGet('mfa.devApi') || (typeof DEV_API === 'string' ? DEV_API.trim() : ''); }
@@ -71,7 +89,9 @@
       if (q.has('devapi')) lsSet('mfa.devApi', q.get('devapi') && q.get('devapi') !== 'off' ? q.get('devapi') : null);
       if (q.has('as')) lsSet('mfa.devAs', q.get('as') || null);
     }
-    q.forEach(function (v, k) { if (k !== 'devapi' && k !== 'as' && k !== 'source') keep[k] = v; });
+    // a tapped notification (sw.js opens ./?ntf=<id>&go=<target>): not a page parameter; handed to the page's bell once it is open
+    if (q.has('go') || q.has('ntf')) { var n0 = ntfClean(q.get('go'), q.get('ntf')); if (n0) pendingNtf = n0; }
+    q.forEach(function (v, k) { if (k !== 'devapi' && k !== 'as' && k !== 'source' && k !== 'go' && k !== 'ntf') keep[k] = v; });
     pageParams = keep;
     var m = /(?:^#|&)link=([A-Za-z0-9]{8})/.exec(location.hash || '');
     if (m) { lsSet('mfa.pendingLink', JSON.stringify({ code: m[1].toUpperCase(), at: Date.now() })); }
@@ -200,6 +220,7 @@
   /* ---------- the app ---------- */
   function enterApp() {
     role = who.role;
+    setTimeout(function () { if (push && who) push.refresh(); }, 15000);   // after the first screens: a renewed push token, if this phone allowed push
     return kvGet('meta:' + who.email).then(function (m) {
       meta = m || {};
       return loadPageStore();
@@ -304,7 +325,9 @@
     });
   }
   var lastHtml = '';
-  window.addEventListener('message', function (e) { if (page && page.onMessage(e)) page.send('state', engine.state()); });
+  window.addEventListener('message', function (e) {
+    if (page && page.onMessage(e)) { page.send('state', engine.state()); if (pendingNtf && !lockOn) { var n = pendingNtf; pendingNtf = null; toFrame('ntfOpen', n); } }
+  });
   // What the page may ask (shim.js check() has already looked at each request's shape)
   var SEALED = { sealedStart: 1, sealedSave: 1, sealedFinish: 1, sealedGet: 1, sealedList: 1, sealedLeave: 1, sealedClear: 1 };
   function fromFrame(t, m) {
@@ -462,7 +485,7 @@
     $('menuVer').textContent = 'MyFiles app ' + APP_VERSION + (devApi() ? ' (dev: ' + devApi() + ')' : '');
     try { navigator.storage.estimate().then(function (e) { $('storeUse').textContent = 'About ' + Math.max(1, Math.round((e.usage || 0) / 1048576)) + ' MB used on this ' + DEV_NOUN + '.'; }); } catch (e) {}
   }
-  function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; }
+  function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; if (push) push.load(); }
   function closeSheets() { ['menu', 'scansSheet', 'locSheet'].forEach(function (id) { $(id).hidden = true; }); }
   function syncNow() {
     return engine.check().then(function () {
@@ -502,6 +525,9 @@
     var em = who && who.email, wasDevice = cred && cred.type === 'device';
     // a linked phone's token is also ended at MyFiles (best effort; DesktopApi.gs appSignOut): a copy of it no longer works
     var revoke = wasDevice && online() && !lockOn ? req.signOut().catch(function () {}) : Promise.resolve();
+    // this phone's notifications end with the account (best effort): the next person on it does not get them
+    revoke = revoke.then(function () { return em ? kvGet('push:' + em) : null; }).then(function (p) {
+      return p && p.token && online() && !lockOn ? req.rpc('pushUnregister', [p.token]).catch(function () {}).then(function () { return kvDel('push:' + em); }) : null; });
     revoke.then(function () { return engine.cache ? engine.cache.clear() : null; }).then(function () {
       return Promise.all([kvDel('who'), saveCred(null), em ? forget(em) : null]);
     }).then(function () {
@@ -591,7 +617,16 @@
       if (!who) return;
       if (engine.outbox.waiting(who.email).length || scanner.waitingCount() || lockOn) { e.preventDefault(); e.returnValue = ''; return ''; }
     });
-    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.type === 'libs') T.libs = e.data; });
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) {
+      var d = e.data || {};
+      if (d.type === 'libs') T.libs = d;
+      if (d.type === 'ntfOpen' && who && !lockOn) { closeSheets(); ntfToPage(ntfClean(d.target, d.id)); }   // a tapped notification, the app already open
+      if (d.type === 'ntfNew' && who) toFrame('ntfArrived', null);                                         // the app is open: the bell's count only
+    });
+    $('pushAllow').addEventListener('click', function () { push.allow(); });
+    $('pushOff').addEventListener('click', function () { push.off(); });
+    $('pushSave').addEventListener('click', function () { push.save(); });
+    $('resDone').addEventListener('click', function () { $('resDone').hidden = false; $('resList').hidden = false; });
   }
 
   function engineEvents() {
@@ -630,6 +665,8 @@
         rpc: function (fn, args) { return req.rpc(fn, args); }, online: function () { return online() && engine.online; }, locked: function () { return lockOn; },
         toast: toast, onLink: function (a, c) { linkWith(a, c); }, onChange: function () { paintStatus(engine.state()); },
         onSent: function () { toFrame('scanSent', null); } });
+      push = MFA_PUSH.create({ $: $, rpc: function (fn, args) { return req.rpc(fn, args); }, kvGet: kvGet, kvPut: kvPut, kvDel: kvDel,
+        account: function () { return who ? who.email : ''; }, online: function () { return online() && engine.online; }, panel: panel });
       engineEvents();
       bind();
       if (store.kind === 'memory') toast('This browser blocks storage, so nothing is kept offline. Open MyFiles in Safari or Chrome (not a private window).', 8000);

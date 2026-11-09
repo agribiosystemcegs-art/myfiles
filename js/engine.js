@@ -411,7 +411,7 @@
         : Promise.resolve();
       return p.then(function () {
         var v = self.lastPing && self.lastPing.v;
-        if (!v || v.same || (String(v.r) === r && String(v.s) === s)) return { ok: true, value: { same: true } };
+        if (!v || v.same || (String(v.r) === r && String(v.s) === s)) return { ok: true, value: { same: true, ntf: v ? v.ntf : undefined } };   // the bell's count still arrives
         return { ok: true, value: clone(v) };
       });
     },

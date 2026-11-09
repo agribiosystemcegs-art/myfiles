@@ -27,7 +27,7 @@
     'portalApvSummary', 'portalApvStatus', 'portalRbLoad', 'portalSigGet', 'portalSylLoad', 'portalSylRepo', 'portalTosLoad', 'portalTqLoad',
     'portalTqImgs', 'portalXvGet', 'portalXvInfo', 'portalXvDownloads', 'portalXvTqList', 'portalXvTqGet', 'deptDocData', 'deptDocGet',
     'deptDocPlaceInfo', 'myDraftsGet', 'portalManualFile', 'thesisBestData', 'portalStudentGateway', 'excLetter', 'excFile',
-    'portalRbSignedGet', 'ccRulesGet', 'ccCampusGet'
+    'portalRbSignedGet', 'ccRulesGet', 'ccCampusGet', 'portalPeerData', 'ntfList'
   ]);
 
   // Students: the screens of the student page (StudentScript.html).
@@ -48,14 +48,15 @@
     'thesisBoot'            // My Documents
   ];
   var STU_SAFE = [];        // the student page draws a screen from each answer: a newer answer is offered with "Updated, refresh"
-  var STU_READS = STU_FAST.concat(['studentPracticeReview', 'excLetter', 'thesisPdf', 'myDraftsGet', 'heroScene', 'seasonCal']);
+  var STU_READS = STU_FAST.concat(['studentPracticeReview', 'excLetter', 'thesisPdf', 'myDraftsGet', 'heroScene', 'seasonCal', 'ntfList']);
 
   // Saved on this phone first and sent as patches (appPatch), faculty only.
   var LOCAL_SAVES = { portalAttSave: 'att', portalKrSave: 'kr' };
   var LOAD_OF = { att: 'portalAttLoad', kr: 'portalKrLoad' };
   var LIST_OF = { att: 'portalAttData', kr: 'portalKrData' };
   // Writes that do not change what the screens show (drafts, presence): they do not make the cache stale.
-  var QUIET = ['myDraftsSave', 'portalPrepPing', 'portalLoadDraft', 'studentPracticeFocus'];
+  // The bell's marks (ntfMark, ntfMarkAll) are quiet too: reading a notice changes no screen.
+  var QUIET = ['myDraftsSave', 'portalPrepPing', 'portalLoadDraft', 'studentPracticeFocus', 'ntfMark', 'ntfMarkAll'];
 
   // The warm-up: every main screen's data, fetched in appBatch calls of up to 25 after the first sign-in (and a role change), and
   // again in the background every 10 minutes and on each app open. Round 1 needs no answer first; round 2 and 3 use the answers
