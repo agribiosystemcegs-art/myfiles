@@ -17,7 +17,8 @@ Changes go to Drive as soon as there is a connection. Students also get a scan b
 
 | File | What it is |
 | --- | --- |
-| `index.html`, `style.css` | The app around the page: sign-in, status bar, scan button, menu, camera |
+| `index.html`, `style.css` | The app around the page: sign-in, status bar, scan button, menu, camera (design v2, 1.2.0) |
+| `fonts/Geist-Variable.woff2`, `LICENSES/Geist-OFL.txt` | Geist, the app's only font, bundled so it looks the same offline (SIL Open Font License 1.1) |
 | `js/app.js` | The app: sign-in, the page in its frame, the status bar, the first-run warm-up, the menu |
 | `js/shim.js` | The page's bridge: `google.script.run`, `google.script.url`, `google.script.history`, `window.MYFILES_APP` |
 | `js/engine.js` | Local-first rules: read cache, outbox, appPatch, warm-up and background refresh, online and offline |
@@ -51,6 +52,14 @@ var DOMAIN = 'carsu.edu.ph';
 
 After any later change to the app's files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` (the same value).
 Phones get the new version the next time they open the app online.
+
+## Design v2 (1.2.0)
+
+The app's own screens (sign-in, Getting Ready with named steps, no connection, the status strip, the account sheet, My Scans,
+location, the camera and the panel) follow the DABE MyFiles design v2: Geist only, neutral grays, hairlines, CarSU green.
+Every action ends in the app's panel (a waiting ring, then Done, Saved on This Phone or Failed), and Sign Out, Remove
+Everything and Discard ask first in that panel with a button that names the action (no browser confirm). The top bar with
+the page title, term and bell, and the tab bar, belong to the MyFiles page inside the app.
 
 ## Phone notifications (1.1.0)
 
@@ -130,7 +139,7 @@ first page, calendar, practice, messages, check-in, grades and each class). Afte
 
 - Every screen opened before (and every main screen, see above) opens from the phone, also with no signal. Online, the
   screen shows at once and the newest data follows in the background; when a screen you are on changed, the status bar
-  offers "Updated, refresh" (it never redraws while you are typing or editing).
+  offers "Refresh" (it never redraws while you are typing or editing).
 - The app refreshes the same screens every 10 minutes while online and each time it is opened, newest first.
 - Attendance and class records: each change is saved on the phone at once ("Saved on this phone") and sent to Drive a
   few seconds later as a small change ("Saved to Drive, 9:14 AM"). Offline, changes wait ("Offline: 2 changes waiting")
@@ -208,7 +217,7 @@ first time (about 1 GB).
 ## Updating the app
 
 Change the files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js`, and upload. Phones get it the next time the
-app is opened online; the status bar then offers "Updated, refresh". The MyFiles pages themselves update by themselves
+app is opened online; the status bar then offers "Refresh". The MyFiles pages themselves update by themselves
 (the app compares the page's stamp with MyFiles at each start and every 30 minutes).
 
 ## Development
@@ -228,11 +237,11 @@ app is opened online; the status bar then offers "Updated, refresh". The MyFiles
 What the app shows students: "This app reads class QR codes and, when you scan, checks whether you are on campus. It keeps
 no exact location, contacts or photos."
 
-The app talks only to the configured MyFiles address, to Google (sign-in, and fonts) and to cdnjs or jsDelivr (the portal's
+The app talks only to the configured MyFiles address, to Google (sign-in) and to cdnjs or jsDelivr (the portal's
 libraries, checked against pinned checksums). It sends your sign-in, the page's own requests, your class scans (with
 the scan's position only when location checking is on and you allowed it) and sealed test answers. It never sends a seal,
 contacts, photos or files you did not choose. MyFiles stores only a device name like "iPhone MyFiles app" for a linked phone.
 
 ## License note
 
-jsQR 1.4.0 by the jsQR authors, Apache License 2.0: see `LICENSES/jsQR.txt`. Icons: DABE-App-Icons (MyFiles Student).
+jsQR 1.4.0 by the jsQR authors, Apache License 2.0: see `LICENSES/jsQR.txt`. Geist (Vercel, with basement.studio), SIL Open Font License 1.1: see `LICENSES/Geist-OFL.txt`. Icons: DABE-App-Icons (MyFiles Student).

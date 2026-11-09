@@ -6,7 +6,8 @@
  *   The portal's libraries (pdf.js, MathJax, mammoth, SheetJS, qrcode-generator): cache-first by their versioned addresses, in
  *     'myfiles-libs-1' (kept across app versions: the addresses carry the library version). A file is kept only when its SHA-256
  *     matches its pin in js/libs.js (the same pins as MyFiles Desktop's libs.json).
- *   Google Fonts: the network first, the kept copy offline ('myfiles-fonts-1').
+ *   The app's font (Geist, fonts/, OFL) is one of the app files. Google Fonts (none used by the app since 1.2.0): the network
+ *     first, the kept copy offline ('myfiles-fonts-1').
  *   Never touched: MyFiles itself (POST requests, never kept here: the answers are personal), Google sign-in, every other site.
  *   The page itself runs in a sandboxed frame this worker does not control: the app hands it the libraries (js/libs.js getLib).
  *   Phone notifications (Firebase Cloud Messaging, Push.gs in MyFiles): the background handler is here, in this worker. FCM sends
@@ -17,15 +18,15 @@
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.1.0';
+var VERSION = '1.2.0';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
 var SHELL = [
-  './', 'index.html', 'style.css', 'config.js', 'manifest.webmanifest',
+  './', 'index.html', 'style.css', 'config.js', 'manifest.webmanifest', 'fonts/Geist-Variable.woff2',
   'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/push.js', 'js/app.js',
   'vendor/jsQR.js', 'vendor/firebase-app-compat.js', 'vendor/firebase-messaging-compat.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
-  'icons/apple-touch-icon.png', 'icons/student-mark-white.svg', 'icons/faculty-mark-white.svg'
+  'icons/apple-touch-icon.png'
 ];
 // The libraries the pages load, by address -> SHA-256 (hex), and the ones fetched ahead: js/libs.js (shared with the app)
 var PINS = self.MFA_LIBS.PINS, WARM = self.MFA_LIBS.WARM;

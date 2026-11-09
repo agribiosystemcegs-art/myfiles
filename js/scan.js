@@ -73,9 +73,10 @@
   }
   function classLabel(s) { return [s.course, s.section, s.kind].filter(Boolean).join(' '); }
   function resultLine(s) { var m = String(s.message || '').trim(); return m && !/^you[’']?re checked in\.?$/i.test(m) ? m : ''; }
+  function plural(n, one, many) { return n === 1 ? '1 ' + one : n + ' ' + many; }
   function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
 
-  // o: { store, $, account() -> email, rpc(fn, args) -> Promise<{ value }>, online() -> bool, locked() -> bool, toast(text),
+  // o: { store, $, account() -> email, rpc(fn, args) -> Promise<{ value }>, online() -> bool, locked() -> bool, toast(text), panel(kind, title, line),
   //      onLink(api, code) (a link QR was scanned in 'link' mode), onSent() }
   function create(o) {
     var $ = o.$, scans = [], cur = 'class', syncing = null, state = { busy: false, error: '', offline: false };
@@ -178,12 +179,12 @@
       sorted.forEach(function (s) {
         var li = el('li', 'item'), row = el('div', 'top');
         row.appendChild(el('span', 'what', classLabel(s) || 'Class scan'));
-        var tag = s.status === 'sent' ? ['ok', 'Sent'] : s.status === 'rejected' ? ['err', 'Not accepted'] : ['wait', 'Waiting to send'];
+        var tag = s.status === 'sent' ? ['ok', 'Sent'] : s.status === 'rejected' ? ['err', 'Not Accepted'] : ['wait', 'Waiting to Send'];
         row.appendChild(el('span', 'chip ' + tag[0], tag[1]));
         li.appendChild(row);
         li.appendChild(el('div', 'when', s.status === 'sent' ? 'Checked in ' + (s.atLabel || fmt(s.t)) : 'Scanned ' + fmt(s.t) + ' (phone time)'));
         if (s.status === 'sent' && resultLine(s)) li.appendChild(el('div', 'why info', resultLine(s)));
-        else if (s.status === 'waiting' && locHeld(s)) li.appendChild(el('div', 'why soft', 'Checking location…'));
+        else if (s.status === 'waiting' && locHeld(s)) li.appendChild(el('div', 'why soft', 'Checking location.'));
         else if (s.status === 'rejected') li.appendChild(el('div', 'why', s.message || 'MyFiles did not accept this scan.'));
         else if (s.status === 'waiting' && s.lastError) li.appendChild(el('div', 'why soft', s.lastError));
         list.appendChild(li);
@@ -199,15 +200,15 @@
       clearTimeout(noticeTimer); noticeTimer = setTimeout(function () { n.hidden = true; }, 15000);
     }
 
-    /* ---------- the result sheet (the design's result screen) ---------- */
+    /* ---------- the result sheet (the app's bold panel): 'busy' is the waiting ring, every scan ends in a result ---------- */
     function showResult(kind, title, line) {
-      var ico = { ok: 'i-check', late: 'i-clock', wait: 'i-hour', bad: 'i-alert', up: 'i-cloudup' }[kind] || 'i-check';
+      var ico = { ok: 'i-check', late: 'i-clock', wait: 'i-hour', bad: 'i-alert', up: 'i-cloudup', busy: 'i-hour' }[kind] || 'i-check';
       $('resIco').className = 'res-ico ' + (kind === 'ok' ? '' : kind);
       $('resIcoUse').setAttribute('href', '#' + ico);
-      $('resTitle').textContent = title; $('resLine').textContent = line || ''; $('resDone').hidden = false; $('resList').hidden = false;
+      $('resTitle').textContent = title; $('resLine').textContent = line || ''; $('resDone').hidden = kind === 'busy'; $('resList').hidden = kind === 'busy';
       $('result').hidden = false;
       if ($('toast')) $('toast').hidden = true;
-      setTimeout(function () { try { $('resDone').focus(); } catch (e) {} }, 30);
+      if (kind !== 'busy') setTimeout(function () { try { $('resDone').focus(); } catch (e) {} }, 30);
     }
 
     /* ---------- the location notice (one time) ---------- */
@@ -230,7 +231,7 @@
     function locate(s, decision) {
       return (decision === 'notice' ? askNotice() : Promise.resolve(true)).then(function (go) {
         if (!go) return attachPos(s.id, null);
-        if (o.toast) o.toast('Saved. Checking location…');
+        showResult('busy', 'Checking Location', 'Your scan is saved. The app checks once whether you are on campus.');
         return geoGranted().then(function (granted) {
           var wait = granted ? LOC_WAIT + 500 : LOC_FIRST_WAIT;
           s.locUntil = Date.now() + wait + 1500;
@@ -257,7 +258,7 @@
       if (!em) { close(); return Promise.resolve('no-account'); }
       return reload().then(function () {
         var dup = mine().filter(function (s) { return s.at === cls.at && s.ak === cls.ak && s.status !== 'rejected'; })[0];
-        if (dup) { buzz([40, 60, 40]); close(); showResult(dup.status === 'sent' ? 'ok' : 'up', 'Already saved', 'This class meeting is already saved on this phone.'); return 'duplicate'; }
+        if (dup) { buzz([40, 60, 40]); close(); showResult(dup.status === 'sent' ? 'ok' : 'up', 'Already Saved', 'This class meeting is already saved on this phone.'); return 'duplicate'; }
         var s = { id: uuid(), text: text, t: Date.now(), at: cls.at, ak: cls.ak, status: 'waiting', account: em };
         var decision = locDecision(locServer(), consent());
         if (decision !== 'skip' && !navigator.geolocation) decision = 'skip';
@@ -270,18 +271,18 @@
       });
     }
     function afterSave(s) {
-      if (o.locked()) { showResult('up', 'Saved', "It will be sent after your test."); return 'saved'; }
-      if (!o.online()) { showResult('up', "Saved. It will be sent when you're online.", 'You are offline right now.'); return 'saved'; }
-      if (o.toast) o.toast('Saved. Sending…');
+      if (o.locked()) { showResult('up', 'Saved on This Phone', "It will be sent after your test."); return 'saved'; }
+      if (!o.online()) { showResult('up', 'Saved on This Phone', "You are offline right now. It will be sent when you're online."); return 'saved'; }
+      showResult('busy', 'Checking You In', 'Your scan is saved. Sending it to MyFiles.');
       return sync().then(function () {
         var c = scans.filter(function (x) { return x.id === s.id; })[0] || s, lbl = classLabel(c), when = String(c.atLabel || '').split(', ').pop();
         if (c.status === 'sent') {
           var line = resultLine(c);
-          if (line && /instructor|confirm/i.test(line)) showResult('wait', 'Waiting for your instructor', line);
-          else if (line && /late/i.test(line)) showResult('late', 'Checked in, late', (lbl ? lbl + ', ' : '') + line);
-          else showResult('ok', "You're checked in", [lbl, when].filter(Boolean).join(', ') + (line ? '. ' + line : ''));
-        } else if (c.status === 'rejected') showResult('bad', 'Not accepted', c.message || 'MyFiles did not accept this scan.');
-        else showResult('up', "Saved. It will be sent when you're online.", c.lastError && !state.offline ? c.lastError : 'MyFiles could not be reached just now.');
+          if (line && /instructor|confirm/i.test(line)) showResult('wait', 'Waiting for Your Instructor', line);
+          else if (line && /late/i.test(line)) showResult('late', 'Checked In, Late', (lbl ? lbl + ', ' : '') + line);
+          else showResult('ok', "You're Checked In", [lbl, when].filter(Boolean).join(', ') + (line ? '. ' + line : ''));
+        } else if (c.status === 'rejected') showResult('bad', 'Not Accepted', c.message || 'MyFiles did not accept this scan.');
+        else showResult('up', 'Saved on This Phone', (c.lastError && !state.offline ? c.lastError : 'MyFiles could not be reached just now.') + " It will be sent when you're online.");
         return c.status;
       });
     }
@@ -305,7 +306,7 @@
     function open(mode) {
       cur = mode || 'class'; cam.lastText = ''; cam.torch = false;
       var token = ++cam.opening;
-      $('camTitle').textContent = cur === 'link' ? 'Scan the link code' : 'Scan the class code';
+      $('camTitle').textContent = cur === 'link' ? 'Scan the Link Code' : 'Scan the Class Code';
       $('camHint').textContent = defHint(); $('camErr').hidden = true; $('camTorch').hidden = true; $('camTorchPad').hidden = false;
       $('camTorch').setAttribute('aria-pressed', 'false');
       $('cam').hidden = false;
@@ -376,11 +377,21 @@
     $('camTorch').addEventListener('click', torch);
     $('resDone').addEventListener('click', function () { $('result').hidden = true; });
     $('resList').addEventListener('click', function () { $('result').hidden = true; $('scansSheet').hidden = false; reload(); });
+    // Send Now and the location switches end in the panel (o.panel); the sheet stays open under it
+    function say(kind, title, line) { if (o.panel) o.panel(kind, title, line); }
     $('btnSend').addEventListener('click', function () {
-      sync().then(function (r) { if (r && r.offline) notice("Could not reach MyFiles. Scans stay here and are sent when you're online.", 'wait'); });
+      var before = waiting().length;
+      say('wait', 'Sending Your Scans', plural(before, 'scan', 'scans') + ' on this phone.');
+      sync().then(function (r) {
+        if (r && r.offline) { notice("Could not reach MyFiles. Scans stay here and are sent when you're online.", 'wait'); say('saved', 'Saved on This Phone', "Could not reach MyFiles. Scans stay here and are sent when you're online."); return; }
+        var left = waiting().length;
+        if (r && r.error) say('bad', 'Not Sent', r.error);
+        else if (left) say('saved', 'Still Waiting', plural(left, 'scan waits', 'scans wait') + ' on this phone. It is sent again by itself.');
+        else say('ok', 'Scans Sent', (r && r.rejected ? plural(r.rejected, 'scan was', 'scans were') + ' not accepted. See the list.' : 'Every scan reached MyFiles.'));
+      });
     });
-    $('btnLocOff').addEventListener('click', function () { setConsent('off'); denied(false); stripPositions().catch(function () {}).then(reload).then(function () { renderLoc(); sync(); }); });
-    $('btnLocOn').addEventListener('click', function () { setConsent('on'); denied(false); renderLoc(); });
+    $('btnLocOff').addEventListener('click', function () { setConsent('off'); denied(false); stripPositions().catch(function () {}).then(reload).then(function () { renderLoc(); sync(); say('ok', 'Location Off', 'Your scans are sent without location; your instructor will check your attendance.'); }); });
+    $('btnLocOn').addEventListener('click', function () { setConsent('on'); denied(false); renderLoc(); say('ok', 'Location On', 'When you scan a class code, the app checks once whether you are on campus.'); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('cam').hidden) close(); });
     document.addEventListener('visibilitychange', function () { if (document.hidden && !$('cam').hidden) close(); });
 

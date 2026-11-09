@@ -67,7 +67,7 @@
     var allow = guard(function () {
       if (isIos() && !standalone()) { o.panel('bad', 'Add to Home Screen First', 'On iPhone, notifications work only from the MyFiles app on the Home Screen (iOS 16.4 or later).'); return; }
       if (!supported()) { o.panel('bad', 'Not Available Here', 'This browser cannot show notifications from MyFiles.'); return; }
-      o.panel('wait', 'Turning On Notifications…', '');
+      o.panel('wait', 'Turning On Notifications', 'Your phone asks first. Tap Allow.');
       return Notification.requestPermission().then(function (perm) {
         if (perm !== 'granted') { o.panel('bad', 'Notifications Not Allowed', 'The phone did not allow notifications for MyFiles. You can allow them later in its settings.'); return; }
         return config().then(function (cfg) {
@@ -86,7 +86,7 @@
       });
     });
     var off = guard(function () {
-      o.panel('wait', 'Turning Off Notifications…', '');
+      o.panel('wait', 'Turning Off Notifications', '');
       return o.kvGet(key()).then(function (saved) {
         var token = saved && saved.token;
         var drop = token ? o.rpc('pushUnregister', [token]) : Promise.resolve(null);
@@ -98,7 +98,7 @@
     var save = guard(function () {
       var $ = o.$, from = $('pushFrom').value, to = $('pushTo').value;
       if (!HM.test(from) || !HM.test(to)) { o.panel('bad', 'Check the Quiet Hours', 'Enter them as HH:MM, for example 21:00 and 06:00.'); return; }
-      o.panel('wait', 'Saving Notification Settings…', '');
+      o.panel('wait', 'Saving Notification Settings', '');
       return o.rpc('pushPrefsSet', [{ on: $('pushOn').checked, quiet: $('pushQuiet').checked, from: from, to: to }]).then(function (r) {
         var v = r && r.value; if (!v || !v.ok) throw new Error((v && v.message) || 'MyFiles did not save them.');
         prefs = v; o.panel('ok', 'Settings Saved', v.message || 'Saved.');

@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.1.0';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.2.0';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -40,13 +40,30 @@
   var toastTimer = null;
   function toast(text, ms) { var t = $('toast'); t.textContent = text; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, ms || 3500); }
   function online() { return navigator.onLine !== false; }
-  // The app's confirmation panel (the result sheet of index.html): 'wait' first, then 'ok' or 'bad'.
+  // The app's bold confirmation panel (the result sheet of index.html): 'wait' first (the ring), then 'ok' (Done, green),
+  // 'saved' (Saved on Device, amber) or 'bad' (Failed, red). hidePanel() closes a waiting panel that leads to another screen.
   function panel(kind, title, line) {
-    $('resIco').className = 'res-ico ' + (kind === 'ok' ? '' : kind === 'wait' ? 'wait' : 'bad');
-    $('resIcoUse').setAttribute('href', '#' + (kind === 'ok' ? 'i-check' : kind === 'wait' ? 'i-hour' : 'i-alert'));
+    $('resIco').className = 'res-ico ' + (kind === 'ok' ? '' : kind === 'wait' ? 'busy' : kind === 'saved' ? 'up' : 'bad');
+    $('resIcoUse').setAttribute('href', '#' + (kind === 'ok' ? 'i-check' : kind === 'wait' ? 'i-hour' : kind === 'saved' ? 'i-phone' : 'i-alert'));
     $('resTitle').textContent = title; $('resLine').textContent = line || ''; $('resList').hidden = true; $('resDone').hidden = kind === 'wait';
     $('menu').hidden = true; $('result').hidden = false; $('toast').hidden = true;
     if (kind !== 'wait') setTimeout(function () { try { $('resDone').focus(); } catch (e) {} }, 30);
+  }
+  function hidePanel() { $('result').hidden = true; }
+  // The panel's question before an action, never the browser's confirm(): o { title, line, yes (names the action), danger, icon }
+  // -> Promise<boolean>. Cancel, the scrim and Escape answer no.
+  var askDone = null;
+  function ask(o) {
+    if (askDone) askDone(false);
+    return new Promise(function (resolve) {
+      $('askIco').className = 'res-ico ' + (o.danger ? 'qbad' : 'q');
+      $('askIcoUse').setAttribute('href', '#' + (o.icon || 'i-alert'));
+      $('askTitle').textContent = o.title; $('askLine').textContent = o.line || '';
+      $('askYes').textContent = o.yes; $('askYes').className = 'btn wide ' + (o.danger ? 'danger' : 'primary');
+      $('menu').hidden = true; $('toast').hidden = true; $('ask').hidden = false;
+      askDone = function (v) { askDone = null; $('ask').hidden = true; resolve(!!v); };
+      setTimeout(function () { try { $('askNo').focus(); } catch (e) {} }, 30);
+    });
   }
   function kvGet(k) { return store.get('kv', k).catch(function () { return null; }); }
   function kvPut(k, v) { return store.put('kv', k, v).catch(function () {}); }
@@ -154,7 +171,7 @@
       $('gWrap').hidden = false;
       loadGis().then(function () {
         $('gBtn').textContent = '';
-        google.accounts.id.renderButton($('gBtn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'continue_with', logo_alignment: 'center', width: Math.min(360, $('gBtn').clientWidth || 320) });
+        google.accounts.id.renderButton($('gBtn'), { theme: 'filled_black', size: 'large', shape: 'rectangular', text: 'continue_with', logo_alignment: 'center', width: Math.min(360, $('gBtn').clientWidth || 320) });
         google.accounts.id.prompt();
       }).catch(function () { $('gWrap').hidden = true; });
     };
@@ -166,7 +183,7 @@
     var pend = pendingLink(); lsSet('mfa.pendingLink', null);
     if (pend) {
       $('linkForm').hidden = false; $('btnLink').hidden = true; $('codeIn').value = pend;
-      signMsg('A link code came with the address. Tap “Link this phone” only if you made this code yourself in MyFiles just now.');
+      signMsg('A link code came with the address. Tap Link This Phone only if you made this code yourself in MyFiles just now.');
     }
   }
   function pendingLink() {
@@ -179,7 +196,7 @@
     if (!tg.ok) { signMsg(tg.message, 'bad'); return Promise.resolve(false); }
     if (!/^[A-Z2-9]{8}$/.test(code)) { signMsg('The link code has 8 letters and numbers.', 'bad'); return Promise.resolve(false); }
     if (!online()) { signMsg("You're offline. Linking needs the internet once.", 'bad'); return Promise.resolve(false); }
-    signMsg('Linking…');
+    signMsg('Linking this ' + DEV_NOUN + ' to MyFiles.');
     var useApi = tg.api;
     var pairReq = MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return useApi; }, devAs: devAs });
     return pairReq.pair(code, deviceLabel()).then(function (res) {
@@ -194,14 +211,14 @@
     var em = devAs(); if (!em) { signMsg('Add ?as=<email> to the address.', 'bad'); return; }
     var run = devApi().replace(/\/exec$/, '/run');
     var mk = function (fn) { return fetch(run, { method: 'POST', body: JSON.stringify({ fn: fn, as: em, args: [] }) }).then(function (r) { return r.json(); }); };
-    signMsg('Linking ' + em + '…');
+    signMsg('Linking ' + em + '.');
     mk('facultyAppLink').then(function (r) { return r && r.ok && r.value && r.value.ok ? r : mk('studentScanLink'); }).then(function (r) {
       if (!(r && r.ok && r.value && r.value.ok)) throw new Error((r && (r.message || (r.value && r.value.message))) || 'no code');
       return linkWith('', r.value.code);
     }).catch(function (e) { signMsg('The simulator did not make a link code: ' + e.message, 'bad'); });
   }
   function finishSignIn() {
-    signMsg('Opening MyFiles…');
+    signMsg('Opening MyFiles.');
     T.signin = Math.round(performance.now());
     return req.who().then(function (w) {
       var nw = { email: String(w.email || '').toLowerCase(), name: w.name || w.email, role: w.role === 'student' ? 'student' : 'faculty', via: cred && cred.type };
@@ -240,32 +257,44 @@
         return;
       }
       if (!online() && !sh) return noShell();
-      // the first open (or a new role): every main screen once, with the calm screen and its progress bar
-      showOnly('scrReady'); setReady(0, 1);
+      // the first open (or a new role): every main screen once, with the calm screen and its named steps
+      showOnly('scrReady'); readyStart(!!(sh && sh.html));
       T.warmStart = Math.round(performance.now());
       var shellP = sh && sh.html ? Promise.resolve(sh) : fetchShell();
+      shellP.then(function (x) { if (x && x.html) readyStep('stPage', 'ok', role === 'student' ? 'Got Your Page' : 'Got the Portal'); }, function () {});
       var warmP = engine.check().then(function () { return engine.warm({ onProgress: function (d, t) { setReady(d, t); } }); });
       return Promise.all([shellP, warmP]).then(function (r) {
         T.warmEnd = Math.round(performance.now()); T.warm = r[1];
         if (!r[0] || !r[0].html) return noShell();
         meta.warmedRole = role; meta.warmedAt = Date.now(); saveMeta();
         shellStamp = r[0].stamp || '';
-        setReady(1, 1);
+        readyStep('stScreens', 'ok', 'Saved Your Screens'); readyStep('stOpen', 'now');
         showApp(r[0].html);
         engine.start();
         warmLibs();
       }).catch(function (e) { if (sh && sh.html) { showApp(sh.html); engine.start(); return; } noShell(e); });
     });
   }
+  // Getting Ready: named steps with checks, the screens counted as they are saved (no percentage)
+  function readyStep(id, cls, text) {
+    var li = $(id); if (!li) return;
+    li.className = cls || '';
+    if (text) ($(id + 'T') || li.lastChild).textContent = text;
+  }
+  function readyStart(havePage) {
+    readyStep('stSign', 'ok', who && who.name ? 'Signed In as ' + who.name : 'Signed In');
+    readyStep('stPage', havePage ? 'ok' : 'now', havePage ? (role === 'student' ? 'Got Your Page' : 'Got the Portal') : (role === 'student' ? 'Getting Your Page' : 'Getting the Portal'));
+    readyStep('stScreens', 'now', 'Saving Your Screens');
+    readyStep('stOpen', '');
+  }
   function setReady(d, t) {
-    var pct = Math.max(4, Math.min(100, Math.round(100 * d / Math.max(1, t))));
-    $('readyFill').style.width = pct + '%'; $('readyBar').setAttribute('aria-valuenow', String(pct));
-    $('readyLine').textContent = d && t > 1 ? 'Fetching your screens, ' + d + ' of ' + t + '. This happens once. After this, MyFiles opens at once, also offline.' : 'This happens once. After this, MyFiles opens at once, also offline.';
+    if (d >= t && t > 0) readyStep('stScreens', 'ok', 'Saved Your Screens');
+    else readyStep('stScreens', 'now', d && t > 1 ? 'Saving Your Screens, ' + d + ' of ' + t : 'Saving Your Screens');
   }
   function noShell(e) {
     showOnly('scrNoShell');
     var auth = e && e.auth;
-    $('noShellTitle').textContent = auth ? 'Sign in again' : e && !e.net && e.message ? 'MyFiles did not open' : 'Connect to the internet once';
+    $('noShellTitle').textContent = auth ? 'Sign In Again' : e && !e.net && e.message ? 'MyFiles Did Not Open' : 'Connect to the Internet Once';
     $('noShellText').textContent = auth ? 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '.' : e && !e.net && e.message ? e.message : 'MyFiles needs the internet the first time it opens. After that it works offline too.';
   }
   function fetchShell() {
@@ -296,7 +325,6 @@
   function saveMeta() { if (who) kvPut('meta:' + who.email, meta); }
   function paintChrome() {
     var stu = role === 'student';
-    $('sbarMark').src = stu ? 'icons/student-mark-white.svg' : 'icons/faculty-mark-white.svg';
     $('meAv').textContent = initials(who.name || who.email);
     $('fab').hidden = !stu || lockOn;
     $('scrApp').classList.toggle('locked', lockOn);
@@ -461,14 +489,16 @@
       var li = document.createElement('li'); li.className = 'item';
       var top = document.createElement('div'); top.className = 'top';
       var w = document.createElement('span'); w.className = 'what'; w.textContent = it.label || 'Change'; top.appendChild(w);
-      var c = document.createElement('span'); c.className = 'chip ' + (it.state === 'rejected' ? 'err' : 'wait'); c.textContent = it.state === 'rejected' ? 'Not accepted' : it.state === 'sending' ? 'Sending' : 'Waiting'; top.appendChild(c);
+      var c = document.createElement('span'); c.className = 'chip ' + (it.state === 'rejected' ? 'err' : 'wait'); c.textContent = it.state === 'rejected' ? 'Not Accepted' : it.state === 'sending' ? 'Sending' : 'Waiting'; top.appendChild(c);
       li.appendChild(top);
       var d = document.createElement('div'); d.className = 'when'; d.textContent = 'Saved on this ' + DEV_NOUN + ', ' + when(it.at); li.appendChild(d);
       if (it.state === 'rejected') {
         var y = document.createElement('div'); y.className = 'why'; y.textContent = it.message || 'MyFiles did not accept this change.'; li.appendChild(y);
         var a = document.createElement('div'); a.className = 'acts';
-        var r = document.createElement('button'); r.className = 'btn sm secondary'; r.type = 'button'; r.textContent = 'Try again'; r.onclick = function () { engine.retry(it.id); paintMenu(); };
-        var x = document.createElement('button'); x.className = 'btn sm ghost'; x.type = 'button'; x.textContent = 'Discard'; x.onclick = function () { if (confirm('Discard this change? It is removed from this ' + DEV_NOUN + '.')) { engine.discard(it.id); paintMenu(); } };
+        var r = document.createElement('button'); r.className = 'btn sm secondary'; r.type = 'button'; r.textContent = 'Try Again'; r.onclick = function () { engine.retry(it.id); paintMenu(); panel('ok', 'Sending Again', 'This change goes to MyFiles again now. The status bar shows when it is in Drive.'); };
+        var x = document.createElement('button'); x.className = 'btn sm ghost'; x.type = 'button'; x.textContent = 'Discard'; x.onclick = function () {
+          ask({ title: 'Discard This Change?', line: 'It is removed from this ' + DEV_NOUN + ' and never reaches MyFiles.', yes: 'Discard Change', danger: true, icon: 'i-trash' }).then(function (yes) {
+            if (!yes) return; engine.discard(it.id); paintMenu(); panel('ok', 'Change Discarded', 'It was removed from this ' + DEV_NOUN + '.'); }); };
         a.appendChild(r); a.appendChild(x); li.appendChild(a);
       }
       ul.appendChild(li);
@@ -487,15 +517,22 @@
   }
   function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; if (push) push.load(); }
   function closeSheets() { ['menu', 'scansSheet', 'locSheet'].forEach(function (id) { $(id).hidden = true; }); }
-  function syncNow() {
+  // Sync Now: from the account sheet it ends in the panel; asked by the page, a short note (the page shows its own panel)
+  function syncNow(fromMenu) {
+    if (fromMenu) panel('wait', 'Syncing', 'Sending your changes and getting what is new.');
     return engine.check().then(function () {
       return Promise.all([engine.sync(), scanner.sync()]);
     }).then(function () {
       if (engine.online) { updateShell(); engine.prefetch(); }
       var s = engine.state();
-      toast(!s.online ? "You're offline. Changes stay on this " + DEV_NOUN + '.' : s.waiting ? 'Still sending…' : 'Up to date');
+      if (fromMenu) {
+        if (!s.online) panel('saved', 'Saved on This ' + DEV_NOUN.charAt(0).toUpperCase() + DEV_NOUN.slice(1), "You're offline. Changes stay on this " + DEV_NOUN + ' and are sent when you are online.');
+        else if (s.auth) panel('bad', 'Sign In Again', 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.');
+        else if (s.waiting) panel('saved', 'Still Sending', plural(s.waiting, 'change is', 'changes are') + ' on the way to Drive.');
+        else panel('ok', 'Up to Date', s.lastDriveAt ? 'Saved to Drive, ' + when(s.lastDriveAt) + '.' : 'Nothing is waiting on this ' + DEV_NOUN + '.');
+      } else toast(!s.online ? "You're offline. Changes stay on this " + DEV_NOUN + '.' : s.waiting ? 'Still sending your changes.' : 'Up to date.');
       return s;
-    });
+    }, function (e) { if (fromMenu) panel('bad', 'Sync Failed', (e && e.message) || 'MyFiles could not be reached. Try again.'); throw e; });
   }
 
   /* ---------- a file the page made ---------- */
@@ -516,11 +553,16 @@
   /* ---------- sign-out and removing everything ---------- */
   function signOut(o) {
     o = o || {};
-    var n = engine.outbox.waiting(who && who.email).length, sc = scanner.waitingCount();
+    var n = engine.outbox.waiting(who && who.email).length, sc = scanner.waitingCount(), q;
     if (n || sc) {
       var what = [n ? plural(n, "change hasn't", "changes haven't") : '', sc ? plural(sc, "scan hasn't", "scans haven't") : ''].filter(Boolean).join(' and ');
-      if (!confirm(what.charAt(0).toUpperCase() + what.slice(1) + ' reached MyFiles yet. Sign out anyway? They stay on this ' + DEV_NOUN + ' and are sent the next time you sign in here.')) return;
-    } else if (!confirm('Sign out of MyFiles? Your copy of MyFiles on this ' + DEV_NOUN + ' is removed.')) return;
+      q = { title: 'Sign Out Anyway?', line: what.charAt(0).toUpperCase() + what.slice(1) + ' reached MyFiles yet. They stay on this ' + DEV_NOUN + ' and are sent the next time you sign in here.' };
+    } else q = { title: 'Sign Out?', line: 'Your copy of MyFiles on this ' + DEV_NOUN + ' is removed.' };
+    q.yes = 'Sign Out'; q.danger = true; q.icon = 'i-out';
+    return ask(q).then(function (yes) { if (yes) signOutNow(o); });
+  }
+  function signOutNow(o) {
+    panel('wait', 'Signing Out', 'Removing your copy of MyFiles from this ' + DEV_NOUN + '.');
     engine.stop();
     var em = who && who.email, wasDevice = cred && cred.type === 'device';
     // a linked phone's token is also ended at MyFiles (best effort; DesktopApi.gs appSignOut): a copy of it no longer works
@@ -534,13 +576,17 @@
       try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
       who = null; role = ''; engine.setAccount(null); pageLs = {}; pageSs = {}; clearTimeout(lsTimer);
       if (page) { page.close(); page = null; }
-      $('page').srcdoc = ''; closeSheets();
+      $('page').srcdoc = ''; closeSheets(); hidePanel();
       showSign(o.again ? 'Choose the account to sign in with.' : 'Signed out.');
-    });
+    }).catch(function (e) { panel('bad', 'Sign Out Failed', ((e && e.message) || 'Something went wrong.') + ' Close MyFiles and try again.'); });
   }
   function wipe() {
     var n = engine.outbox.waiting().length + scanner.waitingCount();
-    if (!confirm((n ? plural(n, 'item has', 'items have') + ' not reached MyFiles yet and will be lost. ' : '') + 'Remove everything MyFiles keeps on this ' + DEV_NOUN + '? You will sign in again.')) return;
+    ask({ title: 'Remove Everything?', line: (n ? plural(n, 'item has', 'items have') + ' not reached MyFiles yet and will be lost. ' : '') + 'Everything MyFiles keeps on this ' + DEV_NOUN + ' is removed. You will sign in again.',
+      yes: 'Remove Everything', danger: true, icon: 'i-trash' }).then(function (yes) { if (yes) wipeNow(); });
+  }
+  function wipeNow() {
+    panel('wait', 'Removing Everything', 'Clearing MyFiles from this ' + DEV_NOUN + '. It opens again at the sign-in.');
     engine.stop();
     Promise.resolve().then(function () { return store.destroy(); }).catch(function () {}).then(function () {
       try { localStorage.clear(); } catch (e) {}
@@ -577,8 +623,9 @@
     $('btnNoShellOut').addEventListener('click', function () { signOut({}); });
     $('stat').addEventListener('click', function () {
       var s = engine.state();
-      if (s.auth && cred && cred.type === 'google' && clientId()) { silentAt = 0; silentGoogle(); toast('Signing in again…'); return; }
-      if (s.auth) { if (confirm('MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Sign in again now? Changes not yet sent stay here.')) { engine.stop(); showSign('Sign in again to send your changes.'); } return; }
+      if (s.auth && cred && cred.type === 'google' && clientId()) { silentAt = 0; silentGoogle(); toast('Signing in again with Google.'); return; }
+      if (s.auth) { ask({ title: 'Sign In Again?', line: 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.', yes: 'Sign In Again', icon: 'i-key' })
+        .then(function (yes) { if (yes) { engine.stop(); showSign('Sign in again to send your changes.'); } }); return; }
       openMenu();
     });
     $('btnMe').addEventListener('click', openMenu);
@@ -590,15 +637,19 @@
     });
     $('fab').addEventListener('click', function () { if (!lockOn) scanner.open('class'); });
     document.querySelectorAll('.sheet-wrap').forEach(function (w) {
-      w.addEventListener('click', function (e) { if (e.target === w && w.id !== 'locAsk' && w.id !== 'result') w.hidden = true; });
+      w.addEventListener('click', function (e) { if (e.target === w && w.id !== 'locAsk' && w.id !== 'result' && w.id !== 'ask') w.hidden = true; });
       w.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', function () { w.hidden = true; }); });
     });
-    $('mSync').addEventListener('click', function () { $('menu').hidden = true; syncNow(); });
+    $('mSync').addEventListener('click', function () { $('menu').hidden = true; syncNow(true).catch(function () {}); });
+    $('askYes').addEventListener('click', function () { if (askDone) askDone(true); });
+    $('askNo').addEventListener('click', function () { if (askDone) askDone(false); });
+    $('ask').addEventListener('click', function (e) { if (e.target === $('ask') && askDone) askDone(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && askDone) askDone(false); });
     $('mScans').addEventListener('click', function () { $('menu').hidden = true; scanner.reload(); $('scansSheet').hidden = false; scanner.sync(); });
     $('mLoc').addEventListener('click', function () { $('menu').hidden = true; scanner.renderLoc(); $('locSheet').hidden = false; });
     $('mOut').addEventListener('click', function () { $('menu').hidden = true; signOut({}); });
     $('mWipe').addEventListener('click', wipe);
-    $('mConfClear').addEventListener('click', function () { engine.conflicts = []; engine.emitState(); paintMenu(); });
+    $('mConfClear').addEventListener('click', function () { engine.conflicts = []; engine.emitState(); paintMenu(); panel('ok', 'List Cleared', 'Your changes were kept. New ones show here if they happen.'); });
 
     window.addEventListener('online', function () { engine.check(); });
     window.addEventListener('offline', function () { engine.markOffline(); });
@@ -671,7 +722,7 @@
       sealed = new MFA_SEALED.Sealed({ store: store, subtle: window.crypto && crypto.subtle });
       scanner = MFA_SCAN.create({ store: store, $: $, account: function () { return who && role === 'student' ? who.email : ''; },
         rpc: function (fn, args) { return req.rpc(fn, args); }, online: function () { return online() && engine.online; }, locked: function () { return lockOn; },
-        toast: toast, onLink: function (a, c) { linkWith(a, c); }, onChange: function () { paintStatus(engine.state()); },
+        toast: toast, panel: panel, onLink: function (a, c) { linkWith(a, c); }, onChange: function () { paintStatus(engine.state()); },
         onSent: function () { toFrame('scanSent', null); } });
       push = MFA_PUSH.create({ $: $, rpc: function (fn, args) { return req.rpc(fn, args); }, kvGet: kvGet, kvPut: kvPut, kvDel: kvDel,
         account: function () { return who ? who.email : ''; }, online: function () { return online() && engine.online; }, panel: panel });
