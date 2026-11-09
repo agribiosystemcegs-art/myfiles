@@ -61,6 +61,15 @@ Every action ends in the app's panel (a waiting ring, then Done, Saved on This P
 Everything and Discard ask first in that panel with a button that names the action (no browser confirm). The top bar with
 the page title, term and bell, and the tab bar, belong to the MyFiles page inside the app.
 
+## One top bar (1.2.1)
+
+A MyFiles page from Redesign v2 Stage 7b shows where your work is in its own 52 px top bar (All Changes Saved, Saving,
+Offline, Saved on Device, with Refresh) and says so to the app once it is drawn (`MYFILES_APP.ownStatus`, a `caps` request on
+the page's port). The app then hides its 44 px strip, so there is one bar, and sends each new status to the page (`status`).
+Tapping the chip opens the app's account sheet (`appUi('menu')`); Refresh applies a waiting update or syncs
+(`appUi('refresh')`) and the page shows the result in its panel. An older page never announces and keeps the strip; a page
+that has not announced 4 seconds after loading gets the strip back.
+
 ## Phone notifications (1.1.0)
 
 MyFiles sends a notification to the phone for every new notice in the bell (Firebase Cloud Messaging; set up once in MyFiles

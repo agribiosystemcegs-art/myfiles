@@ -122,6 +122,17 @@
     api.state = function () { return inRealm(A.state ? A.state() : {}); };
     api.syncNow = function () { return A.syncNow ? Promise.resolve(A.syncNow()).then(inRealm) : Promise.resolve(null); };
     try { Object.defineProperty(api, 'online', { get: function () { return !!(A.state && A.state().online); } }); } catch (e) {}
+    // The page's own top bar can show where the work is (MyFiles 1.2.1 and later). ownStatus(cb) tells the app the page does, so the
+    // app hides its own strip; cb then gets each new status ({ kind, label, line, update }). appUi('menu' | 'refresh'): the app's sheet,
+    // or Refresh (an update waiting, else Sync Now) with its result ({ kind, title, line }) for the page's panel.
+    var statusCb = null;
+    if (B.caps) api.ownStatus = function (cb) {
+      statusCb = typeof cb === 'function' ? cb : null;
+      return Promise.resolve().then(function () { return B.caps({ status: !!statusCb }); }).then(inRealm, function (e) { statusCb = null; throw new Err((e && e.message) || String(e)); });
+    };
+    if (B.ui) api.appUi = function (act) {
+      return Promise.resolve().then(function () { return B.ui(String(act || '')); }).then(inRealm, function (e) { throw new Err((e && e.message) || String(e)); });
+    };
     win.MYFILES_APP = Object.freeze(api);
 
     var sweep = setInterval(function () { var t = Date.now(); Object.keys(live).forEach(function (k) { if (t - live[k].t > 180000) delete live[k]; }); }, 60000);
@@ -152,6 +163,7 @@
           }
         }
         if (type === 'history' && historyState.handler) historyState.handler(inRealm(d));
+        if (type === 'status') { if (statusCb) statusCb(inRealm(d)); return; }   // the app's status, for the page's top bar
         if (type === 'home') {                                  // a newer first state (student page): drawn again on My Classes, never over typing
           var tries = 0, apply = function () {
             try {
@@ -361,6 +373,8 @@
       appHref: function () { return String(boot.appHref || ''); },
       boot: function () { return boot; },
       escape: function () { send('escape'); },
+      caps: function (c) { return rpc('caps', { status: !!(c && c.status) }); },
+      ui: function (act) { return rpc('ui', { act: String(act || '') }); },
       app: {
         sealedStart: appCall('sealedStart'), sealedSave: appCall('sealedSave'), sealedFinish: appCall('sealedFinish'), sealedGet: appCall('sealedGet'),
         sealedList: appCall('sealedList'), sealedLeave: appCall('sealedLeave'), sealedClear: appCall('sealedClear'), syncNow: appCall('syncNow'),
@@ -373,7 +387,8 @@
 
   // ---------- the app's side (the app's window) ----------
   var FN_RE = /^[A-Za-z]\w{0,80}$/;
-  var TYPES = { call: 1, app: 1, declined: 1, netLock: 1, inApp: 1, viewFile: 1, signOut: 1, ls: 1, ss: 1, geo: 1, clip: 1, lib: 1, escape: 1 };
+  var TYPES = { call: 1, app: 1, declined: 1, netLock: 1, inApp: 1, viewFile: 1, signOut: 1, ls: 1, ss: 1, geo: 1, clip: 1, lib: 1, escape: 1, caps: 1, ui: 1 };
+  var UI_ACTS = { menu: 1, refresh: 1 };
   var APP_FNS = { sealedStart: 1, sealedSave: 1, sealedFinish: 1, sealedGet: 1, sealedList: 1, sealedLeave: 1, sealedClear: 1, syncNow: 1 };
   // the parameters of a MyFiles link the page opens here (plain names and short texts only), or null
   function cleanParams(p) {
@@ -399,6 +414,8 @@
       case 'ls': case 'ss': return typeof m.k === 'string' && m.k.length > 0 && m.k.length <= 300 && (m.v === null || (typeof m.v === 'string' && m.v.length <= 4 * 1048576));
       case 'clip': return typeof m.text === 'string' && m.text.length <= 200000;
       case 'lib': return typeof m.url === 'string' && m.url.length <= 300;
+      case 'caps': return typeof m.status === 'boolean';
+      case 'ui': return typeof m.act === 'string' && UI_ACTS[m.act] === 1;
       default: return true;
     }
   }

@@ -152,6 +152,10 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 .me:active { background: var(--hover); }
 .frame-wrap { flex: 1; position: relative; min-height: 0; }
 .frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--canvas); }
+/* A page that shows the status in its own 52 px top bar (it announces it: shim.js ownStatus, MyFiles pages from Redesign v2 Stage 7b)
+   takes the strip's place: one bar. The safe area above stays CarSU green. An older page never announces, so it keeps the strip. */
+.app.pgstat .sbar { display: none; }
+.app.pgstat .frame-wrap { border-top: var(--safe-t) solid var(--green-600); }
 /* a sealed test is open: the strip says so in indigo */
 .app.locked .sbar { background: var(--info-bg); box-shadow: inset 0 -1px 0 var(--info-line); }
 .app.locked .stat, .app.locked .stat svg.i { color: var(--info); }

@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.2.0';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.2.1';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -17,6 +17,7 @@
   var pendingNtf = null;                // a tapped notification's { target, id }, handed to the page once it is open
   var cred = null, who = null, meta = {}, pageParams = {}, role = '', lockOn = false, activeSealed = '';
   var updated = null, gisReady = null, hello = null, shellStamp = '', page = null, pageLs = {}, pageSs = {}, lsTimer = null;
+  var pageOwns = false, capsSeen = false, capsTimer = null;     // the page's top bar shows the status itself (its ownStatus): no strip here
 
   /* ---------- small helpers ---------- */
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -345,7 +346,11 @@
       page = MFA_SHIM.host({ frame: function () { return f.contentWindow; }, nonce: n, handle: fromFrame });
       var boot = { nonce: n, origin: location.origin, version: APP_VERSION, params: pageParams, role: role, device: DEV_NOUN, api: api(),
         appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS) };
-      f.onload = function () { T.shellLoaded = Math.round(performance.now()); };
+      // A new page announces again. Another page's code starts with the strip; the same code keeps the bar it had (no jump), and a
+      // page that has not announced a few seconds after loading gets the strip back: never both bars, never neither.
+      capsSeen = false; clearTimeout(capsTimer);
+      if (html !== lastHtml) pageStatus(false);
+      f.onload = function () { T.shellLoaded = Math.round(performance.now()); clearTimeout(capsTimer); capsTimer = setTimeout(function () { if (!capsSeen) pageStatus(false); }, 4000); };
       f.srcdoc = MFA_SHIM.prepareHtml(html, stu ? { state: state, boot: boot } : { boot: boot });
       lastHtml = html;
       setUpdated(null);
@@ -375,6 +380,11 @@
       case 'clip': return navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(m.text).then(function () { return true; }, function () { return false; }) : false;
       case 'lib': return MFA_LIBS.getLib(m.url, { caches: window.caches, fetch: window.fetch.bind(window), subtle: crypto.subtle });
       case 'escape': closeSheets(); return null;
+      case 'caps': capsSeen = true; pageStatus(m.status); return { ok: true, status: statusOf(engine.state()) };
+      case 'ui':
+        if (m.act === 'menu') { statTap(); return null; }
+        if (m.act === 'refresh') return pageRefresh();
+        break;
     }
     throw new Error('This request is not allowed.');
   }
@@ -472,9 +482,27 @@
     $('statText').textContent = text;
     $('stat').className = 'stat' + (cls ? ' ' + cls : '');
     toFrame('state', s);
+    if (pageOwns) toFrame('status', statusOf(s));
     if (!$('menu').hidden) paintMenu();
   }
-  function setUpdated(u) { updated = u; $('upd').hidden = !u || lockOn; }
+  function setUpdated(u) { updated = u; $('upd').hidden = !u || lockOn; if (pageOwns && engine) toFrame('status', statusOf(engine.state())); }
+  // The status in the page's own top bar: short Title Case words, the longer line for its label
+  function statusOf(s) {
+    s = s || {};
+    var n = s.waiting || 0, scansN = scanner ? scanner.waitingCount() : 0, dev = DEV_NOUN, o = { kind: 'ok', label: 'All Changes Saved', line: '', update: !!updated && !lockOn };
+    if (lockOn) { o.kind = 'lock'; o.label = 'Test Open'; o.line = 'No connection until you submit.'; }
+    else if (s.auth) { o.kind = 'err'; o.label = 'Sign In Again'; o.line = 'Sign in again to send your changes.'; }
+    else if (!s.online) {
+      o.kind = 'off'; o.label = n || scansN ? 'Offline, Saved on Device' : 'Offline';
+      o.line = n ? plural(n, 'change', 'changes') + ' saved on this ' + dev + ', sent when you are online.' : scansN ? plural(scansN, 'scan', 'scans') + ' waiting on this ' + dev + '.' : "You're offline.";
+    }
+    else if (s.rejected) { o.kind = 'err'; o.label = 'Not Accepted'; o.line = plural(s.rejected, 'change was', 'changes were') + ' not accepted. See App and Sync.'; }
+    else if (n || scansN) { o.kind = 'busy'; o.label = 'Saving'; o.line = n ? plural(n, 'change', 'changes') + ' on the way to Drive.' : plural(scansN, 'scan', 'scans') + ' waiting to send.'; }
+    else if (s.conflicts) { o.kind = 'off'; o.label = 'Changed Elsewhere'; o.line = 'Changed elsewhere too. See App and Sync.'; }
+    else if (s.lastDriveAt) o.line = 'Saved to Drive, ' + when(s.lastDriveAt) + '.';
+    return o;
+  }
+  function pageStatus(on) { pageOwns = !!on; $('scrApp').classList.toggle('pgstat', pageOwns); }
 
   /* ---------- the menu ---------- */
   function paintMenu() {
@@ -515,22 +543,48 @@
     $('menuVer').textContent = 'MyFiles app ' + APP_VERSION + (devApi() ? ' (dev: ' + devApi() + ')' : '');
     try { navigator.storage.estimate().then(function (e) { $('storeUse').textContent = 'About ' + Math.max(1, Math.round((e.usage || 0) / 1048576)) + ' MB used on this ' + DEV_NOUN + '.'; }); } catch (e) {}
   }
+  // the strip's status (or the page's chip): sign in again when that is the problem, else the account sheet
+  function statTap() {
+    var s = engine.state();
+    if (s.auth && cred && cred.type === 'google' && clientId()) { silentAt = 0; silentGoogle(); toast('Signing in again with Google.'); return; }
+    if (s.auth) { ask({ title: 'Sign In Again?', line: 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.', yes: 'Sign In Again', icon: 'i-key' })
+      .then(function (yes) { if (yes) { engine.stop(); showSign('Sign in again to send your changes.'); } }); return; }
+    openMenu();
+  }
+  // a waiting update: the app again, a newer page, or the view on screen again
+  function applyUpdate() {
+    var u = updated; setUpdated(null); if (!u) return;
+    if (u.fn === '__app') { location.reload(); return; }
+    if (u.fn === '__shell') { kvGet('shell:' + role).then(function (sh) { if (sh && sh.html) { shellStamp = sh.stamp; showApp(sh.html); } }); return; }
+    toFrame('rerun', { fn: u.fn });
+  }
+  // Refresh in the page's top bar: a waiting update first, else Sync Now; the answer is for the page's own panel
+  function pageRefresh() {
+    if (lockOn) return { kind: 'bad', title: 'Test Open', line: 'Submit the test first. Refresh works again after it.' };
+    if (updated) { applyUpdate(); return { kind: 'ok', title: 'Page Updated', line: 'This is the newest copy from MyFiles.' }; }
+    return syncNow('page').then(syncResult);
+  }
+  function syncResult(s) {
+    var Dev = DEV_NOUN.charAt(0).toUpperCase() + DEV_NOUN.slice(1);
+    if (!s.online) return { kind: 'saved', title: 'Saved on This ' + Dev, line: "You're offline. Changes stay on this " + DEV_NOUN + ' and are sent when you are online.' };
+    if (s.auth) return { kind: 'bad', title: 'Sign In Again', line: 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.' };
+    if (s.waiting) return { kind: 'saved', title: 'Still Sending', line: plural(s.waiting, 'change is', 'changes are') + ' on the way to Drive.' };
+    return { kind: 'ok', title: 'Up to Date', line: s.lastDriveAt ? 'Saved to Drive, ' + when(s.lastDriveAt) + '.' : 'Nothing is waiting on this ' + DEV_NOUN + '.' };
+  }
   function openMenu() { if (lockOn) { toast('The test is open. Submit it first.'); return; } paintMenu(); $('menu').hidden = false; if (push) push.load(); }
   function closeSheets() { ['menu', 'scansSheet', 'locSheet'].forEach(function (id) { $(id).hidden = true; }); }
-  // Sync Now: from the account sheet it ends in the panel; asked by the page, a short note (the page shows its own panel)
-  function syncNow(fromMenu) {
+  // Sync Now: from the account sheet it ends in the panel; asked by the page, a short note (the page shows its own panel);
+  // 'page' (Refresh in the page's top bar): nothing here, the page's panel says it
+  function syncNow(mode) {
+    var fromMenu = mode === true, quiet = mode === 'page';
     if (fromMenu) panel('wait', 'Syncing', 'Sending your changes and getting what is new.');
     return engine.check().then(function () {
       return Promise.all([engine.sync(), scanner.sync()]);
     }).then(function () {
       if (engine.online) { updateShell(); engine.prefetch(); }
       var s = engine.state();
-      if (fromMenu) {
-        if (!s.online) panel('saved', 'Saved on This ' + DEV_NOUN.charAt(0).toUpperCase() + DEV_NOUN.slice(1), "You're offline. Changes stay on this " + DEV_NOUN + ' and are sent when you are online.');
-        else if (s.auth) panel('bad', 'Sign In Again', 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.');
-        else if (s.waiting) panel('saved', 'Still Sending', plural(s.waiting, 'change is', 'changes are') + ' on the way to Drive.');
-        else panel('ok', 'Up to Date', s.lastDriveAt ? 'Saved to Drive, ' + when(s.lastDriveAt) + '.' : 'Nothing is waiting on this ' + DEV_NOUN + '.');
-      } else toast(!s.online ? "You're offline. Changes stay on this " + DEV_NOUN + '.' : s.waiting ? 'Still sending your changes.' : 'Up to date.');
+      if (fromMenu) { var r = syncResult(s); panel(r.kind, r.title, r.line); }
+      else if (!quiet) toast(!s.online ? "You're offline. Changes stay on this " + DEV_NOUN + '.' : s.waiting ? 'Still sending your changes.' : 'Up to date.');
       return s;
     }, function (e) { if (fromMenu) panel('bad', 'Sync Failed', (e && e.message) || 'MyFiles could not be reached. Try again.'); throw e; });
   }
@@ -621,20 +675,9 @@
     $('btnDev').addEventListener('click', devSignIn);
     $('btnNoShellRetry').addEventListener('click', function () { if (who) enterApp(); else showSign(); });
     $('btnNoShellOut').addEventListener('click', function () { signOut({}); });
-    $('stat').addEventListener('click', function () {
-      var s = engine.state();
-      if (s.auth && cred && cred.type === 'google' && clientId()) { silentAt = 0; silentGoogle(); toast('Signing in again with Google.'); return; }
-      if (s.auth) { ask({ title: 'Sign In Again?', line: 'MyFiles did not accept the sign-in of this ' + DEV_NOUN + '. Changes not yet sent stay here.', yes: 'Sign In Again', icon: 'i-key' })
-        .then(function (yes) { if (yes) { engine.stop(); showSign('Sign in again to send your changes.'); } }); return; }
-      openMenu();
-    });
+    $('stat').addEventListener('click', statTap);
     $('btnMe').addEventListener('click', openMenu);
-    $('upd').addEventListener('click', function () {
-      var u = updated; setUpdated(null); if (!u) return;
-      if (u.fn === '__app') { location.reload(); return; }
-      if (u.fn === '__shell') { kvGet('shell:' + role).then(function (sh) { if (sh && sh.html) { shellStamp = sh.stamp; showApp(sh.html); } }); return; }
-      toFrame('rerun', { fn: u.fn });
-    });
+    $('upd').addEventListener('click', applyUpdate);
     $('fab').addEventListener('click', function () { if (!lockOn) scanner.open('class'); });
     document.querySelectorAll('.sheet-wrap').forEach(function (w) {
       w.addEventListener('click', function (e) { if (e.target === w && w.id !== 'locAsk' && w.id !== 'result' && w.id !== 'ask') w.hidden = true; });
