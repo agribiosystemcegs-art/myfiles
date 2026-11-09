@@ -10,8 +10,9 @@
  *   Never touched: MyFiles itself (POST requests, never kept here: the answers are personal), Google sign-in, every other site.
  *   The page itself runs in a sandboxed frame this worker does not control: the app hands it the libraries (js/libs.js getLib).
  *   Phone notifications (Firebase Cloud Messaging, Push.gs in MyFiles): the background handler is here, in this worker. FCM sends
- *     data-only messages ({ data: { title, body, id, target, kind } }); this worker shows them, unless a MyFiles window is open and
- *     in view (the bell already has the notice: that window only hears 'ntfNew', so nothing is shown twice). A tap focuses the open
+ *     data-only messages ({ data: { title, body, id, target, kind } }); this worker always shows them: on iOS a push that shows no
+ *     notification can make Safari revoke the subscription. A MyFiles window in view also hears 'ntfNew' (with the notification's
+ *     tag): its bell counts the notice, then the page closes that notification (getNotifications by tag), so it is not there twice. A tap focuses the open
  *     app, or opens it, at the notice's target (the page's own bell targets), and the bell marks it read. The Firebase SDK
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
@@ -120,13 +121,13 @@ function pushData(e) {
 }
 function appWindows() { return self.clients.matchAll({ type: 'window', includeUncontrolled: true }); }
 self.addEventListener('push', function (e) {
-  var d = pushData(e);
-  e.waitUntil(appWindows().then(function (list) {
-    var seen = list.filter(function (c) { return c.visibilityState === 'visible'; });
-    if (seen.length) { seen.forEach(function (c) { c.postMessage({ type: 'ntfNew', id: d.id }); }); return; }   // in view: the bell has it
-    return self.registration.showNotification(d.title, { body: d.body, tag: d.id || undefined, icon: 'icons/icon-192.png', badge: 'icons/monochrome-432.png',
-      data: { id: d.id, target: d.target } });
-  }));
+  var d = pushData(e), tag = 'mf-' + (d.id || Date.now().toString(36));
+  // Always shown, even with the app in view (iOS: a silent push can end the subscription); a window in view is told too, and it
+  // closes this notification once its bell has the notice.
+  e.waitUntil(self.registration.showNotification(d.title, { body: d.body, tag: tag, icon: 'icons/icon-192.png', badge: 'icons/monochrome-432.png',
+      data: { id: d.id, target: d.target } })
+    .then(function () { return appWindows(); })
+    .then(function (list) { list.filter(function (c) { return c.visibilityState === 'visible'; }).forEach(function (c) { c.postMessage({ type: 'ntfNew', id: d.id, tag: tag }); }); }));
 });
 self.addEventListener('notificationclick', function (e) {
   var d = (e.notification && e.notification.data) || {};

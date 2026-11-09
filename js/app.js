@@ -617,11 +617,19 @@
       if (!who) return;
       if (engine.outbox.waiting(who.email).length || scanner.waitingCount() || lockOn) { e.preventDefault(); e.returnValue = ''; return ''; }
     });
+    // The worker always shows a push (iOS); with the app in view, that notification is closed once the bell counts the notice.
+    function ntfShownClose(tag) {
+      setTimeout(function () {
+        try { navigator.serviceWorker.ready.then(function (reg) { return reg.getNotifications ? reg.getNotifications({ tag: tag }) : []; })
+          .then(function (list) { (list || []).forEach(function (n) { n.close(); }); }).catch(function () { /* nothing to close */ }); } catch (x) { /* no worker */ }
+      }, 1500);
+    }
     if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) {
       var d = e.data || {};
       if (d.type === 'libs') T.libs = d;
       if (d.type === 'ntfOpen' && who && !lockOn) { closeSheets(); ntfToPage(ntfClean(d.target, d.id)); }   // a tapped notification, the app already open
       if (d.type === 'ntfNew' && who) toFrame('ntfArrived', null);                                         // the app is open: the bell's count only
+      if (d.type === 'ntfNew' && d.tag) ntfShownClose(d.tag);                                               // and the shown notification goes once the bell has it
     });
     $('pushAllow').addEventListener('click', function () { push.allow(); });
     $('pushOff').addEventListener('click', function () { push.off(); });
