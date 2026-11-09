@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.2.2';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.0';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
@@ -102,15 +102,25 @@
     if (!API_RE.test(linkApi)) return { ok: false, message: 'That code is not from MyFiles.' };
     return { ok: true, api: linkApi, pin: true };
   }
+  // The Android app's test screen (screenshot block; Android app 1.0.2 and later): its launcher opens MyFiles with ?mfa_ts=1&dv=<key>
+  // (dv: a key the Android app makes from the phone; its test screen sends the same one). Kept for this run of the app only
+  // (sessionStorage), so a browser tab or an older Android app never gets a link to a screen it does not have. ?tsno=1 (the link's
+  // fallback, when Android finds no test screen) turns it off.
+  var DV_RE = /^[a-f0-9]{32,64}$/, TS_PKG = 'ph.edu.carsu.dabe.myfiles';
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} }
+  function nts() { try { var v = JSON.parse(ssGet('mfa.nts') || 'null'); return v && v.v === 1 && DV_RE.test(String(v.dv)) ? v : null; } catch (e) { return null; } }
   (function readAddress() {                                     // dev settings and the parameters for the page
     var q = new URLSearchParams(location.search), keep = {};
+    if (q.get('mfa_ts') === '1' && DV_RE.test(String(q.get('dv') || ''))) ssSet('mfa.nts', JSON.stringify({ v: 1, dv: q.get('dv') }));
+    if (q.has('tsno')) ssSet('mfa.nts', null);
     if (LOCALHOST) {
       if (q.has('devapi')) lsSet('mfa.devApi', q.get('devapi') && q.get('devapi') !== 'off' ? q.get('devapi') : null);
       if (q.has('as')) lsSet('mfa.devAs', q.get('as') || null);
     }
     // a tapped notification (sw.js opens ./?ntf=<id>&go=<target>): not a page parameter; handed to the page's bell once it is open
     if (q.has('go') || q.has('ntf')) { var n0 = ntfClean(q.get('go'), q.get('ntf')); if (n0) pendingNtf = n0; }
-    q.forEach(function (v, k) { if (k !== 'devapi' && k !== 'as' && k !== 'source' && k !== 'go' && k !== 'ntf') keep[k] = v; });
+    q.forEach(function (v, k) { if (k !== 'devapi' && k !== 'as' && k !== 'source' && k !== 'go' && k !== 'ntf' && k !== 'mfa_ts' && k !== 'dv' && k !== 'tsno') keep[k] = v; });
     pageParams = keep;
     var m = /(?:^#|&)link=([A-Za-z0-9]{8})/.exec(location.hash || '');
     if (m) { lsSet('mfa.pendingLink', JSON.stringify({ code: m[1].toUpperCase(), at: Date.now() })); }
@@ -346,7 +356,8 @@
       var f = $('page'), n = nonce();
       page = MFA_SHIM.host({ frame: function () { return f.contentWindow; }, nonce: n, handle: fromFrame });
       var boot = { nonce: n, origin: location.origin, version: APP_VERSION, params: pageParams, role: role, device: DEV_NOUN, api: api(),
-        appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS) };
+        appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS),
+        nts: stu && !!nts() };
       // A new page announces again. Another page's code starts with the strip; the same code keeps the bar it had (no jump), and a
       // page that has not announced a few seconds after loading gets the strip back: never both bars, never neither.
       capsSeen = false; clearTimeout(capsTimer);
@@ -382,6 +393,7 @@
       case 'lib': return MFA_LIBS.getLib(m.url, { caches: window.caches, fetch: window.fetch.bind(window), subtle: crypto.subtle });
       case 'escape': closeSheets(); return null;
       case 'tab': pageTab = m.tab; paintFab(); return null;
+      case 'ts': return testScreen(m.id);
       case 'caps': capsSeen = true; pageStatus(m.status); return { ok: true, status: statusOf(engine.state()) };
       case 'ui':
         if (m.act === 'menu') { statTap(); return null; }
@@ -449,6 +461,38 @@
     }
   };
   function toFrame(type, d) { if (page) page.send(type, d); }
+
+  /* ---------- the Android test screen (screenshot block) ---------- */
+  // Start Test or Open Test Screen on the student page: a one-use pass from MyFiles (studentTestPass; never kept, never shown to the
+  // page), then the app's own screen through an intent: link with the pass. Android opens an app only right after a tap, so the link
+  // goes at once only when the pass came within 4 seconds; otherwise the page says ready and the next tap uses the same pass (a pass
+  // works 3 minutes). A link that did not open the screen (this window stayed in view) leaves the pass unused for that next tap.
+  var tsPass = null;                    // { id, pass, attId, api, until, used }
+  function testScreen(id) {
+    var n = nts();
+    if (!n || role !== 'student' || !who) return Promise.reject(new Error('The test screen is not in this app. Update MyFiles on this phone.'));
+    if (lockOn) return Promise.reject(new Error(MFA_NET.LOCK_MSG));
+    if (tsPass && tsPass.id === id && !tsPass.used && tsPass.until - Date.now() > 20000 && tsPass.api === api()) { tsGo(tsPass); return Promise.resolve({ ok: true, opened: true, attId: tsPass.attId }); }
+    var t0 = Date.now();
+    return req.rpc('studentTestPass', [id, n.dv], { timeout: 60000 }).then(function (r) {
+      var v = r && r.value;
+      if (!v || v.ok !== true || !/^[a-f0-9]{64}$/.test(String(v.pass || ''))) throw new Error((v && v.message) || 'MyFiles did not open the test screen.');
+      tsPass = { id: id, pass: String(v.pass), attId: String(v.attId || ''), api: api(), until: Date.now() + 170000, used: false };
+      engine.staleAt = Date.now();          // the try started (as a write would): the copies kept here are older, so the page's next reads ask MyFiles
+      if (Date.now() - t0 > 4000 || document.hidden) return { ok: true, opened: false, ready: true, attId: tsPass.attId };
+      tsGo(tsPass);
+      return { ok: true, opened: true, attId: tsPass.attId };
+    });
+  }
+  function tsGo(p) {
+    p.used = true;
+    var hid = false, seen = function () { if (document.hidden) hid = true; };
+    document.addEventListener('visibilitychange', seen);
+    setTimeout(function () { document.removeEventListener('visibilitychange', seen); if (!hid && tsPass === p) p.used = false; }, 3000);
+    var back = location.origin + location.pathname + '?tsno=1';
+    location.href = 'intent://open?tp=' + p.pass + '&api=' + encodeURIComponent(p.api) + '#Intent;scheme=myfilestest;package=' + TS_PKG +
+      ';S.browser_fallback_url=' + encodeURIComponent(back) + ';end';
+  }
 
   /* ---------- the net lock (a sealed test is open) ---------- */
   function setLock(on) {

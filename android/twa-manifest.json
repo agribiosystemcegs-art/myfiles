@@ -21,8 +21,8 @@
     "path": "../../DABE-MyFiles-Android-Signing/myfiles-upload.keystore",
     "alias": "myfiles"
   },
-  "appVersionName": "1.0.1",
-  "appVersionCode": 2,
+  "appVersionName": "1.0.2",
+  "appVersionCode": 3,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://agribiosystemcegs-eng.github.io/myfiles/manifest.webmanifest",
@@ -46,5 +46,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "1.0.1"
+  "appVersion": "1.0.2"
 }

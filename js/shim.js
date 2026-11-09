@@ -135,6 +135,12 @@
     };
     // The tab on screen (MyFiles 1.2.2 and later): the app shows its scan button only on My Classes. Fire and forget; the app drops an unknown id.
     if (B.tab) api.pageTab = function (id) { B.tab(String(id || '')); };
+    // The Android test screen (MyFiles 1.3.0 in the Android app 1.0.2 and later): testScreen(id) only where the app can open it
+    // (boot.nts), -> { ok, opened, ready, attId }; on that screen itself (test.html, boot.secure) secureScreen and closeScreen().
+    if (boot.nts && B.testScreen) api.testScreen = function (id) {
+      return Promise.resolve().then(function () { return B.testScreen(String(id || '')); }).then(inRealm, function (e) { throw new Err((e && e.message) || String(e)); });
+    };
+    if (boot.secure) { api.secureScreen = true; api.closeScreen = function () { if (B.close) B.close(); }; }
     win.MYFILES_APP = Object.freeze(api);
 
     var sweep = setInterval(function () { var t = Date.now(); Object.keys(live).forEach(function (k) { if (t - live[k].t > 180000) delete live[k]; }); }, 60000);
@@ -166,6 +172,10 @@
         }
         if (type === 'history' && historyState.handler) historyState.handler(inRealm(d));
         if (type === 'status') { if (statusCb) statusCb(inRealm(d)); return; }   // the app's status, for the page's top bar
+        if (type === 'away') {                                  // the Android test screen was left (or is back): as the page's own blur and focus
+          try { win.dispatchEvent(new win.Event(d && d.on ? 'blur' : 'focus')); } catch (e) { /* an old engine */ }
+          return;
+        }
         if (type === 'home') {                                  // a newer first state (student page): drawn again on My Classes, never over typing
           var tries = 0, apply = function () {
             try {
@@ -378,6 +388,8 @@
       caps: function (c) { return rpc('caps', { status: !!(c && c.status) }); },
       ui: function (act) { return rpc('ui', { act: String(act || '') }); },
       tab: function (id) { id = String(id || ''); if (/^[a-z]{1,12}$/.test(id)) send('tab', { tab: id }); },   // the app's check() takes only PAGE_TABS
+      testScreen: function (id) { return rpc('ts', { id: String(id || '') }); },
+      close: function () { send('close'); },
       app: {
         sealedStart: appCall('sealedStart'), sealedSave: appCall('sealedSave'), sealedFinish: appCall('sealedFinish'), sealedGet: appCall('sealedGet'),
         sealedList: appCall('sealedList'), sealedLeave: appCall('sealedLeave'), sealedClear: appCall('sealedClear'), syncNow: appCall('syncNow'),
@@ -390,7 +402,7 @@
 
   // ---------- the app's side (the app's window) ----------
   var FN_RE = /^[A-Za-z]\w{0,80}$/;
-  var TYPES = { call: 1, app: 1, declined: 1, netLock: 1, inApp: 1, viewFile: 1, signOut: 1, ls: 1, ss: 1, geo: 1, clip: 1, lib: 1, escape: 1, caps: 1, ui: 1, tab: 1 };
+  var TYPES = { call: 1, app: 1, declined: 1, netLock: 1, inApp: 1, viewFile: 1, signOut: 1, ls: 1, ss: 1, geo: 1, clip: 1, lib: 1, escape: 1, caps: 1, ui: 1, tab: 1, ts: 1, close: 1 };
   var UI_ACTS = { menu: 1, refresh: 1 };
   // the student page's tabs (StudentScript.html appTab): its bar, a class's own page, the test lock, anything else
   var PAGE_TABS = { classes: 1, todo: 1, practice: 1, grades: 1, thesis: 1, cal: 1, me: 1, 'class': 1, test: 1, other: 1 };
@@ -422,6 +434,8 @@
       case 'caps': return typeof m.status === 'boolean';
       case 'ui': return typeof m.act === 'string' && UI_ACTS[m.act] === 1;
       case 'tab': return typeof m.tab === 'string' && PAGE_TABS[m.tab] === 1 && Object.keys(m).length === 2;
+      case 'ts': return typeof m.id === 'string' && /^[\w-]{1,80}$/.test(m.id);
+      case 'close': return Object.keys(m).length === 1;
       default: return true;
     }
   }

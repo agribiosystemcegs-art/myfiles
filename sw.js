@@ -18,13 +18,13 @@
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.2.2';
+var VERSION = '1.3.0';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
 var SHELL = [
-  './', 'index.html', 'style.css', 'config.js', 'manifest.webmanifest', 'fonts/Geist-Variable.woff2',
-  'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/push.js', 'js/app.js',
+  './', 'index.html', 'test.html', 'style.css', 'config.js', 'manifest.webmanifest', 'fonts/Geist-Variable.woff2',
+  'js/libs.js', 'js/lists.js', 'js/diff.js', 'js/store.js', 'js/net.js', 'js/engine.js', 'js/sealed.js', 'js/shim.js', 'js/scan.js', 'js/push.js', 'js/app.js', 'js/testhost.js',
   'vendor/jsQR.js', 'vendor/firebase-app-compat.js', 'vendor/firebase-messaging-compat.js', 'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png'
 ];
@@ -88,8 +88,9 @@ self.addEventListener('fetch', function (e) {
     return;
   }
   if (req.mode === 'navigate') {
+    var page = /\/test\.html$/.test(url.pathname) ? 'test.html' : 'index.html';   // the Android test screen's page (1.3.0) is its own
     e.respondWith(caches.open(CACHE).then(function (c) {
-      return c.match('index.html').then(function (hit) { return hit || fetch(req); });
+      return c.match(page).then(function (hit) { return hit || fetch(req); });
     }));
     return;
   }

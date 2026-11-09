@@ -229,6 +229,18 @@ first time (about 1 GB).
 5. Share the `.apk`. On the phone: allow installing from that source when Android asks, then install. A new web version
    needs no new app file; only a change of name, icon or address does (raise `appVersionCode` and build again).
 
+### The test screen (Android 1.0.2 and later, app 1.3.0)
+
+Graded online tests on Android open in one native screen of the Android app (`TestActivity`, a WebView with `FLAG_SECURE`, so
+screenshots and screen recording show black). It shows only `test.html` (`js/testhost.js`), which signs in with a one-use test
+pass from MyFiles (`studentTestPass`, then `appTestPass`) and then a session that can open only that one test try. The
+launcher marks the address it opens with `?mfa_ts=1&dv=<phone key>`; only then does the page get `MYFILES_APP.testScreen`, so
+iPhone, a browser and the Android app 1.0.1 open tests as before (with the watermark). The Android project, with these
+changes in `LauncherActivity`, `TestActivity`, `TestScreen` and the manifest, is `~/Downloads/DABE-MyFiles-Android-Project`
+(its own git): `bubblewrap update` regenerates those files, so keep the changes. Set `MYFILES_API` in `config.js` (in the form
+`https://script.google.com/a/macros/<domain>/s/<id>/exec` or `.../macros/s/<id>/exec`): the test screen then accepts only that
+MyFiles address.
+
 ## Updating the app
 
 Change the files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js`, and upload. Phones get it the next time the
