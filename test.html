@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <!-- The Android app's test screen (screenshot block). Opened only by the Android app's own WebView screen (FLAG_SECURE), with a
-       one-use test pass in the address fragment: js/testhost.js. Nothing here signs in with Google. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://script.google.com https://script.googleusercontent.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net http://localhost:* http://127.0.0.1:*; frame-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+       one-use test pass in the address fragment: js/testhost.js. Nothing here signs in with Google. connect-src names no
+       localhost address (dev/serve.js adds it for the copy it serves on this computer). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://script.google.com https://script.googleusercontent.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; frame-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">

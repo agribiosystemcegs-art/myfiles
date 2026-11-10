@@ -126,12 +126,20 @@
         });
       });
     },
-    get: function (attId) { var self = this; return this.store.get('sealed', this.key(attId)).then(function (rec) { if (rec && !rec.finishedAt) { self.tick(rec); } return rec ? self.view(rec, true) : null; }); },
+    // account (when given): the record of another account is not handed out
+    get: function (attId, account) {
+      var self = this;
+      return this.store.get('sealed', this.key(attId)).then(function (rec) {
+        if (rec && account && rec.account && rec.account !== account) return null;
+        if (rec && !rec.finishedAt) { self.tick(rec); }
+        return rec ? self.view(rec, true) : null;
+      });
+    },
     // the tests open (or finished, not cleared) on this phone for this account
     list: function (account) {
       var self = this;
       return this.store.all('sealed').then(function (all) {
-        return all.map(function (x) { return x.val; }).filter(function (r) { return r && (!account || !r.account || r.account === account); }).map(function (r) { return self.view(r); });
+        return all.map(function (x) { return x.val; }).filter(function (r) { return r && (!account || r.account === account); }).map(function (r) { return self.view(r); });
       });
     },
     clear: function (attId) { return this.store.del('sealed', this.key(attId)); },

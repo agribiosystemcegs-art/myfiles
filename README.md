@@ -34,7 +34,8 @@ Changes go to Drive as soon as there is a connection. Students also get a scan b
 | `vendor/jsQR.js`, `LICENSES/jsQR.txt` | jsQR 1.4.0 (Apache-2.0), the QR reader for iPhone |
 | `js/push.js` | Phone notifications: Allow Notifications, Turn Off, quiet hours (the menu's Notifications) |
 | `vendor/firebase-*-compat.js`, `LICENSES/firebase.txt` | Firebase JS SDK 10.14.1 (Apache-2.0), app and messaging, for the notification token |
-| `Dockerfile`, `nginx.conf` | Optional: host it on the school server |
+| `Dockerfile`, `nginx.conf`, `security-headers.inc` | Optional: host it on the school server (the include holds the security headers every answer carries) |
+| `dev/serve.js` | The development server (localhost only): serves this folder and lets the served pages reach the local simulator |
 
 ## 1. Fill in config.js
 
@@ -88,6 +89,37 @@ without that handler yet is ignored). A refused push re-registration is tried ag
 pass only to `MYFILES_API`, else to the address learned before (the app's pinned one, or the first test's), never another:
 set `MYFILES_API` in config.js so a phone that never opened a test is covered too.
 
+## 1.3.2 Security Fixes
+
+These close the phone app's part of the security audit. Set `MYFILES_API` and `GOOGLE_WEB_CLIENT_ID` in config.js before
+release: with both set, a link code can never point a phone at another address, and the rest of this section is a second
+line of defence.
+
+While `MYFILES_API` is empty, a first link code is accepted only when its address is exactly
+`https://script.google.com/macros/s/<id>/exec`, and the app asks first: Link to This MyFiles? shows the end of the
+address and says to continue only with a code made on the MyFiles website just now. The address is kept only after the
+link works. A MyFiles whose saved address has the `/a/macros/<domain>/` form needs `MYFILES_API` set, or its codes are
+refused on a phone that was never linked. Sign Out and Remove Everything both forget the kept address, the Google client
+ID learned from it and the location setting, so a wrong address does not stay on the phone.
+
+Remove Everything now tells MyFiles first, as Sign Out does: this phone's notifications end, then a linked phone's token
+is ended (`appSignOut`). It waits at most 8 seconds, and clears the phone all the same when offline, during a sealed
+test, or with no answer. The page can read a sealed test only for the account that is signed in.
+
+On the Android test screen, a link that MyFiles refuses (used before, too old, or not one it made) no longer closes a
+test that is open there: the open test comes back. With no test open, the message is shown as before.
+
+SheetJS is now 0.20.3 from `cdn.sheetjs.com`, the publisher's fixed build (0.18.5 has CVE-2023-30533 and
+CVE-2024-22363), pinned by SHA-256 in `js/libs.js`. A page that still asks for the 0.18.5 addresses is handed the
+pinned 0.20.3 file, and a kept 0.18.5 copy is dropped. 0.20.3 is published on that one host only, so the question bank's
+Excel import and export need it reachable once; after that the file is kept on the phone.
+
+The pages' Content-Security-Policy no longer lists localhost (see Development), and adds `cdn.sheetjs.com`. For the
+school server, `security-headers.inc` is included in every nginx location, so no answer is sent without the headers:
+no framing by other sites, HSTS (it counts once the HTTPS proxy is in front), nosniff, the referrer and permissions
+policies, all sent with error answers too. A missing file is now a 404 and not the app's page, and the Docker image
+holds `test.html` and `fonts/`, which it lacked.
+
 ## Phone notifications (1.1.0)
 
 MyFiles sends a notification to the phone for every new notice in the bell (Firebase Cloud Messaging; set up once in MyFiles
@@ -123,8 +155,8 @@ account outside CarSU use "Link with a code".
 
 ### b) The school server
 
-Any static web server with HTTPS works. Serve `sw.js`, `index.html`, `config.js` and `js/` with `Cache-Control: no-cache` so
-updates reach phones. With Docker (nginx is included; put the school's HTTPS reverse proxy in front of it):
+Any static web server with HTTPS works. Serve `sw.js`, `index.html`, `test.html`, `config.js` and `js/` with
+`Cache-Control: no-cache` so updates reach phones, and send the headers of `security-headers.inc` with every answer. With Docker (nginx is included; put the school's HTTPS reverse proxy in front of it):
 
 ```sh
 docker build -t myfiles-app .
@@ -261,14 +293,18 @@ app is opened online; the status bar then offers "Refresh". The MyFiles pages th
 
 ## Development
 
-- Serve the folder: `python3 -m http.server 8798 --directory .` and open `http://localhost:8798/`.
+- Serve the folder: `node dev/serve.js` (port 8798; another port: `node dev/serve.js 8799`) and open
+  `http://localhost:8798/`. Since 1.3.2 the pages' Content-Security-Policy does not list localhost, so the app can
+  reach the local simulator only through this server: it adds localhost to `connect-src` in the copy it serves, and the
+  files stay as they are. It listens on this computer only. A plain static server still shows the app, without dev mode.
 - Dev mode (localhost only): `DEV_API = 'http://localhost:PORT/exec'` (the local simulator) and `DEV_AS = '<email>'` in
   `config.js`, or in the address: `?devapi=http://localhost:PORT/exec&as=<email>` (kept for that browser;
   `?devapi=off` ends it). "Continue as <email> (dev)" asks the simulator's `/run` for a link code
   (`facultyAppLink`, else `studentScanLink`) and links with it, so the real link-code sign-in is used. The simulator's
   `/run` must answer with CORS (or put a small CORS proxy in front of it).
 - Going offline for a test: point `?devapi=` to a port where nothing listens.
-- On localhost the page exposes `window.__scanTest(text)` (acts like a camera scan) and `window.__mfa` (the engine, the
+- On localhost the page exposes `window.__scanTest(text)` (acts like a camera scan; `__scanTest(text, 'link')` acts like a
+  scanned link code) and `window.__mfa` (the engine, the
   scanner, sealed tests, timings); the service worker loads the app's files from the network first.
 
 ## Privacy
@@ -276,8 +312,8 @@ app is opened online; the status bar then offers "Refresh". The MyFiles pages th
 What the app shows students: "This app reads class QR codes and, when you scan, checks whether you are on campus. It keeps
 no exact location, contacts or photos."
 
-The app talks only to the configured MyFiles address, to Google (sign-in) and to cdnjs or jsDelivr (the portal's
-libraries, checked against pinned checksums). It sends your sign-in, the page's own requests, your class scans (with
+The app talks only to the configured MyFiles address, to Google (sign-in) and to cdnjs, jsDelivr or cdn.sheetjs.com (the
+portal's libraries, checked against pinned checksums). It sends your sign-in, the page's own requests, your class scans (with
 the scan's position only when location checking is on and you allowed it) and sealed test answers. It never sends a seal,
 contacts, photos or files you did not choose. MyFiles stores only a device name like "iPhone MyFiles app" for a linked phone.
 

@@ -5,7 +5,8 @@
  *   App files: cache-first (precached at install), cache 'myfiles-app-<VERSION>'.
  *   The portal's libraries (pdf.js, MathJax, mammoth, SheetJS, qrcode-generator): cache-first by their versioned addresses, in
  *     'myfiles-libs-1' (kept across app versions: the addresses carry the library version). A file is kept only when its SHA-256
- *     matches its pin in js/libs.js (the same pins as MyFiles Desktop's libs.json).
+ *     matches its pin in js/libs.js (the same pins as MyFiles Desktop's libs.json). An address that moved (js/libs.js MOVED:
+ *     SheetJS 0.18.5) is answered with its pinned replacement; the old file is never fetched here, and a kept copy is dropped.
  *   The app's font (Geist, fonts/, OFL) is one of the app files. Google Fonts (none used by the app since 1.2.0): the network
  *     first, the kept copy offline ('myfiles-fonts-1').
  *   Never touched: MyFiles itself (POST requests, never kept here: the answers are personal), Google sign-in, every other site.
@@ -18,7 +19,7 @@
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.3.1';
+var VERSION = '1.3.2';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
@@ -29,7 +30,7 @@ var SHELL = [
   'icons/apple-touch-icon.png', 'icons/monochrome-432.png', 'icons/icon-maskable-192.png'   // the push badge and the manifest's icons, offline too
 ];
 // The libraries the pages load, by address -> SHA-256 (hex), and the ones fetched ahead: js/libs.js (shared with the app)
-var PINS = self.MFA_LIBS.PINS, WARM = self.MFA_LIBS.WARM;
+var PINS = self.MFA_LIBS.PINS, WARM = self.MFA_LIBS.WARM, MOVED = self.MFA_LIBS.MOVED, libUrl = self.MFA_LIBS.resolve;
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
     return c.addAll(SHELL.map(function (u) { return new Request(u, { cache: 'reload' }); }));
@@ -39,6 +40,9 @@ self.addEventListener('install', function (e) {
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
     return Promise.all(keys.filter(function (k) { return k.indexOf('myfiles-app-') === 0 && k !== CACHE; }).map(function (k) { return caches.delete(k); }));
+  }).then(function () {
+    // a library kept under an address that moved (SheetJS 0.18.5) is not kept any longer
+    return caches.open(LIBS).then(function (c) { return Promise.all(Object.keys(MOVED).map(function (u) { return c.delete(u); })); }).catch(function () {});
   }).then(function () { return self.clients.claim(); }));
 });
 
@@ -53,12 +57,12 @@ function fetchLib(url) {
     });
   });
 }
-function lib(req) {
-  var url = req.url.split('#')[0];
+function lib(req, url) {
+  var same = url === req.url.split('#')[0];
   return caches.open(LIBS).then(function (c) {
     return c.match(url).then(function (hit) {
       if (hit) return hit;
-      return fetchLib(url).catch(function () { return fetch(req); });
+      return fetchLib(url).catch(function () { return same ? fetch(req) : Response.error(); });   // a moved address: never the old file
     });
   });
 }
@@ -75,7 +79,8 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;                            // MyFiles is POSTed to, straight
   var url = new URL(req.url);
-  if (PINS[req.url.split('#')[0]]) { e.respondWith(lib(req)); return; }
+  var pinned = libUrl(req.url);
+  if (pinned) { e.respondWith(lib(req, pinned)); return; }
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') { e.respondWith(font(req)); return; }
   if (url.origin !== self.location.origin) return;             // Google sign-in and every other site: not touched
   if (url.pathname.indexOf('/.well-known/') >= 0) return;

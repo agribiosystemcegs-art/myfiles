@@ -16,10 +16,11 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.3.1';               // keep equal to APP_VERSION in js/app.js
+  var VERSION = '1.3.2';               // keep equal to APP_VERSION in js/app.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
+  var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
+  var PIN_RE = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]{20,200}\/exec$/;   // the only form learned from a link (as js/app.js)
   var DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?\/[^?#]*$/;
   var PASS_RE = /^[a-f0-9]{64}$/, DV_RE = /^[a-f0-9]{32,64}$/;
   var TEST_FNS = { studentPracticeStart: 1, studentPracticeSave: 1, studentPracticeFocus: 1, studentPracticeSubmit: 1, studentTestSubmitSealed: 1 };
@@ -36,14 +37,14 @@
   })();
   // The MyFiles a pass may go to: config.js's address when it is set; else the address learned and kept before (the app's pinned
   // one, mfa.pin, when this screen shares its storage; or the one this screen's first test came from, kv ts:api), and no other;
-  // only with nothing learned yet, an https script.google.com /exec, which is then kept (localhost: the simulator).
+  // only with nothing learned yet, a plain https script.google.com/macros/s/<id>/exec, which is then kept (localhost: the simulator).
   var learned = '';
   function fixedApi() { var f = typeof MYFILES_API === 'string' ? MYFILES_API.trim() : ''; return API_RE.test(f) ? f : ''; }
   function apiOk(a) {
     if (LOCALHOST && DEV_RE.test(a)) return true;
     if (fixedApi()) return a === fixedApi();
     if (learned) return a === learned;
-    return API_RE.test(a);
+    return PIN_RE.test(a);
   }
   function learn() {                                                       // the kept address, read before any check
     var pin = ''; try { pin = localStorage.getItem('mfa.pin') || ''; } catch (e) { /* storage blocked */ }
@@ -124,7 +125,7 @@
       case 'sealedStart': return sealed.start(a[0], a[1], em);
       case 'sealedSave': return sealed.save(a[0], a[1], a[2]);
       case 'sealedFinish': return sealed.finish(a[0], a[1]);
-      case 'sealedGet': return sealed.get(a[0]);
+      case 'sealedGet': return sealed.get(a[0], em);
       case 'sealedList': return sealed.list(em);
       case 'sealedLeave': return sealed.leave(a[0]);
       case 'sealedClear': return sealed.clear(a[0]);
@@ -137,7 +138,7 @@
     var f = $('page'), n = nonce();
     page = MFA_SHIM.host({ frame: function () { return f.contentWindow; }, nonce: n, handle: fromFrame });
     var boot = { nonce: n, origin: location.origin, version: VERSION, params: {}, role: 'student', device: 'phone', api: sess.api, appHref: location.href,
-      mono: performance.now(), state: { online: navigator.onLine !== false, locked: lockOn }, ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS), secure: true };
+      mono: performance.now(), state: { online: navigator.onLine !== false, locked: lockOn }, ls: pageLs, ss: pageSs, libs: MFA_LIBS.URLS, secure: true };
     f.srcdoc = MFA_SHIM.prepareHtml(pg.html, { state: pg.state, boot: boot });
   }
   window.addEventListener('message', function (e) { if (page && page.onMessage(e)) page.send('state', { online: navigator.onLine !== false, locked: lockOn }); });
@@ -156,10 +157,10 @@
     return r0.post({ action: 'appTestPass', pass: addr.tp, dv: addr.dv }, { anonymous: true, timeout: 90000 }).then(function (j) {
       if (!j || j.ok !== true || !PASS_RE.test(String(j.sess || '')) || !j.html || !j.state) {
         addr.tp = '';                                                          // used, or refused: never sent again
-        return panel('bad', 'Test Not Open', (j && j.message) || 'MyFiles did not open the test.');
+        return refused((j && j.message) || 'MyFiles did not open the test.');
       }
       addr.tp = '';
-      if (!fixedApi() && !learned && API_RE.test(addr.api)) { learned = addr.api; kvPut('ts:api', learned); }   // later tests must use this one
+      if (!fixedApi() && !learned && PIN_RE.test(addr.api)) { learned = addr.api; kvPut('ts:api', learned); }   // later tests must use this one
       sess = { api: addr.api, sess: String(j.sess), until: Number(j.until) || (Date.now() + 3600000), attId: String(j.attId || ''), id: String(j.id || ''),
         title: String(j.title || ''), email: String((j.state && j.state.email) || '').toLowerCase() };
       var pg = { html: String(j.html), state: j.state };
@@ -167,7 +168,15 @@
     }, function (e) {
       if (e && e.net) return panel('bad', 'No Connection', 'The test screen needs the internet to open the test. Check your connection, then try again.', { retry: function () { if (addr.tp) exchange().catch(function (x) { panel('bad', 'Test Not Open', (x && x.message) || 'MyFiles did not open the test.'); }); else closeScreen(); } });
       addr.tp = '';
-      panel('bad', 'Test Not Open', (e && e.message) || 'MyFiles did not open the test.');
+      return refused((e && e.message) || 'MyFiles did not open the test.');
+    });
+  }
+  // MyFiles said no to the pass (used before, too old, or not one it made). A test already open on this screen stays open: a
+  // link that does not work, from any page or app, never closes it. With no test open here, the message is shown.
+  function refused(msg) {
+    return kvGet('ts:sess').then(function (s) {
+      if (s && Number(s.until) > Date.now()) return resume();
+      return panel('bad', 'Test Not Open', msg);
     });
   }
   function begin(pg, ls) {
@@ -198,7 +207,7 @@
       return learn();
     }).then(function () {
       if (addr.tp) {
-        if (!PASS_RE.test(addr.tp) || !DV_RE.test(addr.dv) || !apiOk(addr.api)) { addr.tp = ''; return panel('bad', 'Test Not Open', 'This test screen link is not one MyFiles made. Go back to MyFiles and press Start Test again.'); }
+        if (!PASS_RE.test(addr.tp) || !DV_RE.test(addr.dv) || !apiOk(addr.api)) { addr.tp = ''; return refused('This test screen link is not one MyFiles made. Go back to MyFiles and press Start Test again.'); }
         return exchange();
       }
       return resume();

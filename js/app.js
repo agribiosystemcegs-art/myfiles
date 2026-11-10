@@ -6,10 +6,12 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.3.1';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.2';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
+  var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
+  // The only form a scanned link code may bring as a new MyFiles address (the first link, config.js empty): the plain /exec link
+  var PIN_RE = /^https:\/\/script\.google\.com\/macros\/s\/([\w-]{20,200})\/exec$/;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var T = window.__mfaTimes = { start: Math.round(performance.now()) };
 
@@ -93,13 +95,16 @@
   // an address learned from a scanned QR code could be someone else's web app, which could then use the token as that person.
   function googleOk() { return !!(configApi() && !devApi()); }
   function clientId() { if (!googleOk()) return ''; return (typeof GOOGLE_WEB_CLIENT_ID === 'string' && GOOGLE_WEB_CLIENT_ID.trim()) || lsGet('mfa.clientId') || ''; }
-  // Which MyFiles a link code may use: the configured or pinned one only; the first link QR's address is pinned (MyFiles Scan's rule).
+  // Which MyFiles a link code may use: the configured or pinned one only. With neither (config.js empty, nothing linked before),
+  // the first link QR's address is pinned, and only after the person has seen where it leads and said yes (linkWith): any
+  // Apps Script web app has an address of this form, so the form alone does not say it is MyFiles. Sign Out and Remove
+  // Everything forget the pin.
   function linkTarget(linkApi) {
     var fixed = devApi() || configApi() || pinnedApi() || '';
     linkApi = String(linkApi || '').trim();
     if (fixed) { if (linkApi && linkApi !== fixed && !devApi()) return { ok: false, message: 'This link code is for a different MyFiles.' }; return { ok: true, api: fixed }; }
     if (!linkApi) return { ok: false, message: 'This app has no MyFiles address yet. Scan the link code instead of typing it.' };
-    if (!API_RE.test(linkApi)) return { ok: false, message: 'That code is not from MyFiles.' };
+    if (!PIN_RE.test(linkApi)) return { ok: false, message: 'That code is not from MyFiles.' };
     return { ok: true, api: linkApi, pin: true };
   }
   // The Android app's test screen (screenshot block; Android app 1.0.2 and later): its launcher opens MyFiles with ?mfa_ts=1&dv=<key>
@@ -208,16 +213,26 @@
     if (!tg.ok) { signMsg(tg.message, 'bad'); return Promise.resolve(false); }
     if (!/^[A-Z2-9]{8}$/.test(code)) { signMsg('The link code has 8 letters and numbers.', 'bad'); return Promise.resolve(false); }
     if (!online()) { signMsg("You're offline. Linking needs the internet once.", 'bad'); return Promise.resolve(false); }
-    signMsg('Linking this ' + DEV_NOUN + ' to MyFiles.');
     var useApi = tg.api;
-    var pairReq = MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return useApi; }, devAs: devAs });
-    return pairReq.pair(code, deviceLabel()).then(function (res) {
-      if (!(res && res.ok && res.token)) { signMsg((res && res.message) || 'That code did not work. Make a new one in MyFiles and try again.', 'bad'); return false; }
-      if (tg.pin) lsSet('mfa.pin', useApi);
-      if (typeof res.loc === 'boolean') lsSet('mfa.loc', res.loc ? '1' : '0');
-      return saveCred({ type: 'device', token: res.token, email: String(res.email || '').toLowerCase() }).then(function () { finishSignIn(); return true; });
-    }, function (e) { signMsg(e && e.busy ? e.message : 'Could not reach MyFiles. Check your internet and try again.', 'bad'); return false; });
+    // A first link (no address in config.js, none kept): the person sees where the code leads and agrees, before anything is sent
+    // there or kept. Nothing leaves this phone on Cancel.
+    var agreed = !tg.pin ? Promise.resolve(true) : ask({ title: 'Link to This MyFiles?', icon: 'i-key', yes: 'Link This Phone',
+      line: 'This is the first link on this ' + DEV_NOUN + '. The code leads to a MyFiles on script.google.com, and its address ends in ' + pinEnd(useApi) +
+        '. Continue only if you made this code yourself on the MyFiles website just now. A code from a message, a poster or another person can link this ' + DEV_NOUN + ' to a copy that is not MyFiles.' });
+    return agreed.then(function (yes) {
+      if (!yes) { signMsg('Not linked. Make a link code on the MyFiles website, then scan it here.'); return false; }
+      signMsg('Linking this ' + DEV_NOUN + ' to MyFiles.');
+      var pairReq = MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return useApi; }, devAs: devAs });
+      return pairReq.pair(code, deviceLabel()).then(function (res) {
+        if (!(res && res.ok && res.token)) { signMsg((res && res.message) || 'That code did not work. Make a new one in MyFiles and try again.', 'bad'); return false; }
+        if (tg.pin) lsSet('mfa.pin', useApi);
+        if (typeof res.loc === 'boolean') lsSet('mfa.loc', res.loc ? '1' : '0');
+        return saveCred({ type: 'device', token: res.token, email: String(res.email || '').toLowerCase() }).then(function () { finishSignIn(); return true; });
+      }, function (e) { signMsg(e && e.busy ? e.message : 'Could not reach MyFiles. Check your internet and try again.', 'bad'); return false; });
+    });
   }
+  // The end of a MyFiles address's own name (the part between /s/ and /exec), as the person can compare it with the MyFiles website's address
+  function pinEnd(a) { var m = PIN_RE.exec(String(a || '')); return m ? m[1].slice(-6) : ''; }
   // dev mode: the simulator makes a real link code for ?as=<email> (/run, as the web page would), then the app links with it
   function devSignIn() {
     var em = devAs(); if (!em) { signMsg('Add ?as=<email> to the address.', 'bad'); return; }
@@ -358,7 +373,7 @@
       var f = $('page'), n = nonce();
       page = MFA_SHIM.host({ frame: function () { return f.contentWindow; }, nonce: n, handle: fromFrame });
       var boot = { nonce: n, origin: location.origin, version: APP_VERSION, params: pageParams, role: role, device: DEV_NOUN, api: api(),
-        appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: Object.keys(MFA_LIBS.PINS),
+        appHref: location.href, mono: performance.now(), state: engine.state(), ls: pageLs, ss: pageSs, libs: MFA_LIBS.URLS,
         nts: stu && !!nts() };
       // A new page announces again. Another page's code starts with the strip; the same code keeps the bar it had (no jump), and a
       // page that has not announced a few seconds after loading gets the strip back: never both bars, never neither.
@@ -458,7 +473,7 @@
       sealedStart: function (attId, payload) { activeSealed = String(attId); if (lockOn) saveLock(); return sealed.start(attId, payload, who && who.email); },
       sealedSave: function (attId, answers, m) { return sealed.save(attId, answers, m); },
       sealedFinish: function (attId, m) { return sealed.finish(attId, m); },
-      sealedGet: function (attId) { return sealed.get(attId); },
+      sealedGet: function (attId) { return sealed.get(attId, who && who.email); },
       sealedList: function () { return sealed.list(who && who.email); },
       sealedLeave: function (attId) { return sealed.leave(attId); },
       sealedClear: function (attId) { return sealed.clear(attId); }
@@ -688,6 +703,9 @@
       return Promise.all([kvDel('who'), saveCred(null), em ? forget(em) : null]);
     }).then(function () {
       try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+      // what the phone learned from the MyFiles it was linked to goes with the sign-in: the pinned address (a wrong one does not
+      // stay; the next link asks again), the Google client ID it named, and its location setting
+      lsSet('mfa.pin', null); lsSet('mfa.clientId', null); lsSet('mfa.loc', null);
       who = null; role = ''; engine.setAccount(null); pageLs = {}; pageSs = {}; clearTimeout(lsTimer);
       if (lockOn) { lockOn = false; activeSealed = ''; saveLock(); engine.setLock(false); $('scrApp').classList.remove('locked'); }   // its sealed answers stay
       if (page) { page.close(); page = null; }
@@ -695,6 +713,7 @@
       showSign(o.again ? 'Choose the account to sign in with.' : 'Signed out.');
     }).catch(function (e) { panel('bad', 'Sign Out Failed', ((e && e.message) || 'Something went wrong.') + ' Close MyFiles and try again.'); });
   }
+  var WIPE_WAIT_MS = 8000;              // how long Remove Everything waits for MyFiles to end this phone's sign-in
   function wipe() {
     var n = engine.outbox.waiting().length + scanner.waitingCount();
     ask({ title: 'Remove Everything?', line: (n ? plural(n, 'item has', 'items have') + ' not reached MyFiles yet and will be lost. ' : '') + 'Everything MyFiles keeps on this ' + DEV_NOUN + ' is removed. You will sign in again.',
@@ -703,7 +722,15 @@
   function wipeNow() {
     panel('wait', 'Removing Everything', 'Clearing MyFiles from this ' + DEV_NOUN + '. It opens again at the sign-in.');
     engine.stop();
-    Promise.resolve().then(function () { return store.destroy(); }).catch(function () {}).then(function () {
+    // MyFiles is told first, as Sign Out tells it (this phone's notifications, then a linked phone's token: a copy of the token
+    // stops working), while the sign-in is still here. Best effort and short: offline, during a sealed test, or with no answer
+    // in WIPE_WAIT_MS, the phone is cleared all the same.
+    var em = who && who.email, wasDevice = cred && cred.type === 'device', canCall = online() && !lockOn && !!cred;
+    var told = !canCall ? Promise.resolve() : Promise.resolve().then(function () { return push ? push.signOut(em, true) : null; }).catch(function () {}).then(function () {
+      return wasDevice ? req.signOut() : null;
+    }).catch(function () {});
+    var waited = new Promise(function (resolve) { setTimeout(resolve, WIPE_WAIT_MS); });
+    Promise.race([told, waited]).then(function () { return store.destroy(); }).catch(function () {}).then(function () {
       try { localStorage.clear(); } catch (e) {}
       return window.caches ? caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x); })); }) : null;
     }).catch(function () {}).then(function () {
