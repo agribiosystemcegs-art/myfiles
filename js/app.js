@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.3.4';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.5';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
@@ -210,9 +210,9 @@
   function linkWith(linkApi, code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     var tg = linkTarget(linkApi);
-    if (!tg.ok) { signMsg(tg.message, 'bad'); return Promise.resolve(false); }
-    if (!/^[A-Z2-9]{8}$/.test(code)) { signMsg('The link code has 8 letters and numbers.', 'bad'); return Promise.resolve(false); }
-    if (!online()) { signMsg("You're offline. Linking needs the internet once.", 'bad'); return Promise.resolve(false); }
+    if (!tg.ok) { linkFail(tg.message); return Promise.resolve(false); }
+    if (!/^[A-Z2-9]{8}$/.test(code)) { linkFail('The link code has 8 letters and numbers.'); return Promise.resolve(false); }
+    if (!online()) { linkFail("You're offline. Linking needs the internet once."); return Promise.resolve(false); }
     var useApi = tg.api;
     // A first link (no address in config.js, none kept): the person sees where the code leads and agrees, before anything is sent
     // there or kept. Nothing leaves this phone on Cancel.
@@ -222,15 +222,20 @@
     return agreed.then(function (yes) {
       if (!yes) { signMsg('Not linked. Make a link code on the MyFiles website, then scan it here.'); return false; }
       signMsg('Linking this ' + DEV_NOUN + ' to MyFiles.');
+      // owner 2026-11-12: the link had no visible sign of work (one small line under the form). The bold panel shows it now.
+      panel('wait', 'Linking This ' + nounTitle(), 'Checking the code with MyFiles. This takes a few seconds.');
       var pairReq = MFA_NET.createRequester({ fetch: window.fetch.bind(window), getApi: function () { return useApi; }, devAs: devAs });
       return pairReq.pair(code, deviceLabel()).then(function (res) {
-        if (!(res && res.ok && res.token)) { signMsg((res && res.message) || 'That code did not work. Make a new one in MyFiles and try again.', 'bad'); return false; }
+        if (!(res && res.ok && res.token)) { linkFail((res && res.message) || 'That code did not work. Make a new one in MyFiles and try again.'); return false; }
         if (tg.pin) lsSet('mfa.pin', useApi);
         if (typeof res.loc === 'boolean') lsSet('mfa.loc', res.loc ? '1' : '0');
         return saveCred({ type: 'device', token: res.token, email: String(res.email || '').toLowerCase() }).then(function () { finishSignIn(); return true; });
-      }, function (e) { signMsg(e && e.busy ? e.message : 'Could not reach MyFiles. Check your internet and try again.', 'bad'); return false; });
+      }, function (e) { linkFail(e && e.busy ? e.message : 'Could not reach MyFiles. Check your internet and try again.'); return false; });
     });
   }
+  function nounTitle() { return DEV_NOUN.charAt(0).toUpperCase() + DEV_NOUN.slice(1); }
+  // a link that did not go through: the line under the form, and the bold panel (red, with its Close)
+  function linkFail(text) { signMsg(text, 'bad'); panel('bad', 'Not Linked', text); }
   // The end of a MyFiles address's own name (the part between /s/ and /exec), as the person can compare it with the MyFiles website's address
   function pinEnd(a) { var m = PIN_RE.exec(String(a || '')); return m ? m[1].slice(-6) : ''; }
   // dev mode: the simulator makes a real link code for ?as=<email> (/run, as the web page would), then the app links with it
@@ -246,17 +251,18 @@
   }
   function finishSignIn() {
     signMsg('Opening MyFiles.');
+    panel('wait', 'Opening MyFiles', 'Signed in. Getting your account.');
     T.signin = Math.round(performance.now());
     return req.who().then(function (w) {
       var nw = { email: String(w.email || '').toLowerCase(), name: w.name || w.email, role: w.role === 'student' ? 'student' : 'faculty', via: cred && cred.type };
       if (!nw.email) throw new Error('MyFiles did not say who is signed in.');
       return kvGet('who').then(function (old) {
         if (old && old.email && old.email !== nw.email) return forget(old.email);   // another account was here: its copy goes
-      }).then(function () { return kvPut('who', nw); }).then(function () { who = nw; return enterApp(); });
+      }).then(function () { return kvPut('who', nw); }).then(function () { who = nw; hidePanel(); return enterApp(); });
     }).catch(function (e) {
-      if (e && e.auth) signMsg('MyFiles did not accept this sign-in. ' + (cred && cred.type === 'device' ? 'Make a new link code and try again.' : 'Use your CarSU account, or link with a code.'), 'bad');
-      else if (e && e.net) signMsg("You're offline. Signing in needs the internet once.", 'bad');
-      else signMsg((e && e.message) || 'MyFiles did not answer.', 'bad');
+      var t = e && e.auth ? 'MyFiles did not accept this sign-in. ' + (cred && cred.type === 'device' ? 'Make a new link code and try again.' : 'Use your CarSU account, or link with a code.')
+        : e && e.net ? "You're offline. Signing in needs the internet once." : (e && e.message) || 'MyFiles did not answer.';
+      signMsg(t, 'bad'); panel('bad', 'Not Signed In', t);
       return saveCred(null);
     });
   }

@@ -16,7 +16,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.3.4';               // keep equal to APP_VERSION in js/app.js
+  var VERSION = '1.3.5';               // keep equal to APP_VERSION in js/app.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
