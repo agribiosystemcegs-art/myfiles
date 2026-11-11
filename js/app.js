@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.3.5';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.6';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
@@ -147,7 +147,7 @@
     if (gisReady) return gisReady;
     gisReady = new Promise(function (resolve, reject) {
       if (window.google && google.accounts && google.accounts.id) return resolve();
-      var s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+      var s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client?hl=en'; s.async = true;
       s.onload = function () { resolve(); }; s.onerror = function () { gisReady = null; reject(new Error('Google sign-in could not load.')); };
       document.head.appendChild(s);
     }).then(function () {
@@ -188,7 +188,9 @@
       $('gWrap').hidden = false;
       loadGis().then(function () {
         $('gBtn').textContent = '';
-        google.accounts.id.renderButton($('gBtn'), { theme: 'filled_black', size: 'large', shape: 'rectangular', text: 'continue_with', logo_alignment: 'center', width: Math.min(360, $('gBtn').clientWidth || 320) });
+        // owner 2026-11-12: Google's black button puts its G on a white tile that a page cannot restyle; the outline style is white
+        // throughout and pairs with Link with a Code below it. English, like the rest of the app (Google follows the phone's language).
+        google.accounts.id.renderButton($('gBtn'), { theme: 'outline', size: 'large', shape: 'rectangular', text: 'continue_with', logo_alignment: 'center', locale: 'en', width: Math.min(400, $('gBtn').clientWidth || 320) });
         google.accounts.id.prompt();
       }).catch(function () { $('gWrap').hidden = true; });
     };
