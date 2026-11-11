@@ -89,6 +89,10 @@ without that handler yet is ignored). A refused push re-registration is tried ag
 pass only to `MYFILES_API`, else to the address learned before (the app's pinned one, or the first test's), never another:
 set `MYFILES_API` in config.js so a phone that never opened a test is covered too.
 
+## 1.3.4 MyFiles Address Set
+
+`MYFILES_API` in config.js is now the department's public MyFiles link (the `/exec` address of the live deployment), so a phone talks to that address only and a link code can no longer point it elsewhere (closes the rest of audit item P3). `GOOGLE_WEB_CLIENT_ID` is still empty: Continue with Google uses the ID saved in MyFiles (Custodian, Setup, MyFiles App) when there is one.
+
 ## 1.3.3 Tests Tab
 
 The student page now has its own Tests tab for graded tests (Practice keeps the ungraded items). The app knows the

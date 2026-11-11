@@ -6,7 +6,7 @@
  */
 (function () {
   'use strict';
-  var APP_VERSION = '1.3.3';            // keep equal to VERSION in sw.js
+  var APP_VERSION = '1.3.4';            // keep equal to VERSION in sw.js
   var $ = function (id) { return document.getElementById(id); };
   var LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   var API_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;

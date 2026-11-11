@@ -17,7 +17,7 @@
  *
  * After any change to the app's files, bump VERSION in sw.js and APP_VERSION in js/app.js (the same value).
  */
-var MYFILES_API = '';
+var MYFILES_API = 'https://script.google.com/macros/s/AKfycbyfcAekjzL9QlaX8Sl7w7Qbpj-CI9fERWAni_CoyA63sqCJlzaMiAtnNv4h9xjYSr5p/exec';
 var GOOGLE_WEB_CLIENT_ID = '';
 var DOMAIN = 'carsu.edu.ph';
 var DEV_API = '';
