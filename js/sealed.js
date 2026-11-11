@@ -64,7 +64,7 @@
         return self.store.get('sealed', k).then(function (rec) {
           if (rec && !rec.finishedAt) { if (payload) rec.payload = payload; if (seal) rec.seal = String(seal); self.tick(rec); return self.store.put('sealed', k, rec).then(function () { return self.view(rec); }); }
           if (rec && rec.finishedAt) return self.view(rec);
-          if (!seal) throw new Error('This test has no seal. Open it again from the Practice tab.');
+          if (!seal) throw new Error('This test has no seal. Open it again from the Tests tab.');
           rec = { attId: k, account: account || '', payload: payload || {}, seal: String(seal), answers: {}, usedMs: 0, leaveCount: 0, saves: 0,
             startedAt: new Date(self.now()).toISOString(), mark: null };
           self.tick(rec);

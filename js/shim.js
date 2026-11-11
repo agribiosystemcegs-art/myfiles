@@ -405,7 +405,7 @@
   var TYPES = { call: 1, app: 1, declined: 1, netLock: 1, inApp: 1, viewFile: 1, signOut: 1, ls: 1, ss: 1, geo: 1, clip: 1, lib: 1, escape: 1, caps: 1, ui: 1, tab: 1, ts: 1, close: 1 };
   var UI_ACTS = { menu: 1, refresh: 1 };
   // the student page's tabs (StudentScript.html appTab): its bar, a class's own page, the test lock, anything else
-  var PAGE_TABS = { classes: 1, todo: 1, practice: 1, grades: 1, thesis: 1, cal: 1, me: 1, 'class': 1, test: 1, other: 1 };
+  var PAGE_TABS = { classes: 1, todo: 1, tests: 1, practice: 1, grades: 1, thesis: 1, cal: 1, me: 1, 'class': 1, test: 1, other: 1 };
   var APP_FNS = { sealedStart: 1, sealedSave: 1, sealedFinish: 1, sealedGet: 1, sealedList: 1, sealedLeave: 1, sealedClear: 1, syncNow: 1 };
   // the parameters of a MyFiles link the page opens here (plain names and short texts only), or null
   function cleanParams(p) {

@@ -19,7 +19,7 @@
  *     itself (vendor/, pinned) runs only in the app's window, to get the token: this worker needs no Firebase settings to start.
  */
 importScripts('js/libs.js');
-var VERSION = '1.3.2';
+var VERSION = '1.3.3';
 var CACHE = 'myfiles-app-' + VERSION, LIBS = self.MFA_LIBS.CACHE, FONTS = 'myfiles-fonts-1';
 // On localhost (development) the app files come from the network first, so an edit shows without a version bump.
 var DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);

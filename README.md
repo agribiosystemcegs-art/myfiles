@@ -89,6 +89,11 @@ without that handler yet is ignored). A refused push re-registration is tried ag
 pass only to `MYFILES_API`, else to the address learned before (the app's pinned one, or the first test's), never another:
 set `MYFILES_API` in config.js so a phone that never opened a test is covered too.
 
+## 1.3.3 Tests Tab
+
+The student page now has its own Tests tab for graded tests (Practice keeps the ungraded items). The app knows the
+`tests` tab name, and the sealed-test message says "Open it again from the Tests tab." No other change.
+
 ## 1.3.2 Security Fixes
 
 These close the phone app's part of the security audit. Set `MYFILES_API` and `GOOGLE_WEB_CLIENT_ID` in config.js before
